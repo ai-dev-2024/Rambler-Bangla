@@ -1,0 +1,11 @@
+# Generated test/build outputs
+fixtures/out/
+*.apk
+*.aab
+*.dex
+*.class
+*.keystore
+*.jks
+*.idsig
+__pycache__/
+*.pyc

@@ -1,0 +1,31 @@
+== 1. policy unit tests
+PolicyTest: 51 passed, 0 failed
+  PASS: policy unit tests (51 assertions)
+== 2. fixture build
+  PASS: fixture APK builds (smali + d8 + aapt2 + sign)
+== 3. end-to-end patch
+  PASS: analyze resolves anchors and fingerprints
+  PASS: analyze reports both fingerprint hits
+  PASS: patch applies on matching fixture
+  PASS: hook B (override rule) present
+  PASS: hook A (script gate) present
+  PASS: enabled-languages value saved to dedicated register
+  PASS: hook args are distinct registers (no clobber)
+  PASS: stock rule string preserved as fail-safe input
+  PASS: register window grew exactly by 3 temps
+  PASS: --extension-dex merge adds classes3.dex
+== 4. fail-closed negative tests
+  PASS: wrong fingerprint aborts with no output APK
+  PASS: tampered stock string aborts with no output APK
+  PASS: re-patching an already patched build aborts (idempotency guard)
+== 5. APK parse + signature validation
+verified=true v1=false v2=true
+signer: CN=PixelBoard Fixture (not a release key),OU=testing,O=PixelBoard contributors sha256=65e990451db0179cf93e92ffd7870dadd9f617fa4012f8da07379c674a94d71c
+  PASS: patched+resigned fixture passes APK Signature Scheme v2 verification
+  fixture-stock.apk | pkg: com.pixelboard.bengalipatch.fixture | vc: 1 | vn: 1.0-fixture | dexes: 2
+  fixture-patched-signed.apk | pkg: com.pixelboard.bengalipatch.fixture | vc: 1 | vn: 1.0-fixture | dexes: 2
+  androguard: both APKs parse as valid, package/version read back
+  PASS: androguard parses stock+patched fixture APKs
+
+===================================
+TEST SUITE: 17 passed, 0 failed
