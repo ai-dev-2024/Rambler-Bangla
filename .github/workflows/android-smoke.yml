@@ -135,9 +135,9 @@ jobs:
             grep -F -q "$(cat smoke-artifacts/ime-id.txt)" smoke-artifacts/ime-list-after.txt
             echo "Registered and enabled IME: $(cat smoke-artifacts/ime-id.txt)" | tee smoke-artifacts/ime-result.txt
             # End-user typing exercise: focus Android Settings search so the selected Rambler IME owns a real EditText.
-            adb shell am start -a android.settings.SETTINGS > smoke-artifacts/text-target-launch.txt
+            adb shell am start -n com.android.settings/.Settings\$SettingsSearchActivity > smoke-artifacts/text-target-launch.txt
             sleep 2
-            adb shell input tap 540 180
+            adb shell input tap 540 140
             sleep 2
             adb shell dumpsys input_method > smoke-artifacts/input-method-before-typing.txt
             grep -F -q "mCurMethodId=$(cat smoke-artifacts/ime-id.txt)" smoke-artifacts/input-method-before-typing.txt
