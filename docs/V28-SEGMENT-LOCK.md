@@ -40,14 +40,21 @@ typing path run V27.11 code unchanged.
      `smoother`) is re-stemmed (`-ing/-ed/-es/-s/-ly/-er/-est`) and counts as
      English;
    - `bangla`/`bengali` are neutral (language names used in both languages).
-4. **Hysteresis**: a chain of 2+ strong/function words (one-word loan gaps
-   allowed) locks the segment to Bangla. A single strong word only converts
-   when no English-set word appears anywhere in the utterance - sentence
-   punctuation and lowercase discourse markers split segments, and a name
-   isolated into its own one-word segment ("Rahim and Karim will come to the
-   office tomorrow.") would otherwise convert because the tiny segment alone
-   contains no English. This is the brief's "a run of 2+ words flips; a single
-   weak word does not".
+4. **Hysteresis with Bangla weight**: a chain of 2+ strong/function words
+   (one-word loan gaps allowed) locks the segment to Bangla only when it
+   carries real Bangla weight: 3+ strong Bangla words in the chain, OR Bangla
+   evidence at least matching English evidence in the segment, OR a
+   Bangla-frame function word in the chain (ami/ta/ki/na/se/je; "to" and "er"
+   are excluded because they are common in plain English prose). This kills
+   two reverse-leak classes: function-word bridges into a lone loan ("The
+   office is next to the bazar.") and adjacent 2-strong name/island pairs
+   ("Rahim Karim joined the call.", "He is my choto bhai."). A single strong
+   word only converts when no English-set word appears anywhere in the
+   utterance - sentence punctuation and lowercase discourse markers split
+   segments, and a name isolated into its own one-word segment ("Rahim and
+   Karim will come to the office tomorrow.") would otherwise convert because
+   the tiny segment alone contains no English. This is the brief's "a run of
+   2+ words flips; a single weak word does not".
 5. **Protected spans**: URLs, emails, @handles, and digit-suffixed am/pm times
    (3:30pm) are marked protected before any language decision: they render
    byte-identical everywhere and are transparent to chain evidence (a handle
@@ -55,8 +62,10 @@ typing path run V27.11 code unchanged.
 6. **Zone split for boundary-less dictation**: when ASR delivers one long
    stretch with no punctuation, a real language switch shows up as a long
    English chain. If a segment contains both a >=4-word English chain and a
-   >=2-word Bangla chain, it splits into zones at the chain starts and each
-   zone is classified on its own. Shorter English chains remain embedded loans.
+   >=3-word Bangla chain, it splits into zones at the chain starts and each
+   zone is classified on its own. Shorter English chains remain embedded
+   loans, and a 2-word Bangla island sandwiched in English ("We visited Kali
+   Bari during the festival week.") stays Latin rather than being split out.
 7. **Render**: Bangla segments convert every word token through the engine's
    own converters (`convertToken` / `convertTokenLoan`, including English
    loans, exactly as the k1 layout renders them); English segments pass through
@@ -74,6 +83,9 @@ reproduces V27.11 byte-for-byte on all 19 captured log lines before patching.
 | k2 multilingual, 13 log lines | 12 fixed per spec, 1 already correct |
 | Brief 9-case acceptance matrix | 9/9 pass |
 | Adversarial suite, 14 cases | 14/14 pass |
+| Reverse-leak battery, 39 cases | 39/39 pass |
+| Hand stress battery, 85 cases | 85/85 pass |
+| Seeded fuzz, 12 seeds x 60 mixes | 720/720 pass |
 
 Adversarial highlights: 5-switch long dictation locks every segment correctly;
 single ambiguous words alone (`ki`, `to`, `na`) stay Latin (hysteresis);
@@ -91,7 +103,7 @@ abar cholbo" renders as Bangla / English / Bangla zones.
   in Gboard's own implementation); classification here is lexical, not
   acoustic.
 
-## Hysteresis anchor rule (final)
+## Hysteresis anchor + weight rules (final)
 
 A Bangla lock requires at least one engine-strong Bangla word in the chain.
 Ambiguous function words (ami, ta, ki, er, to, na, se, je) extend and support
@@ -99,6 +111,14 @@ a chain but can never start a lock on their own: an English sentence that
 merely contains "to"/"in"/"on" twice stays Latin. This was hardened after the
 extended matrix caught "I want to go to the park." converting on the strength
 of two "to" collisions.
+
+On top of the anchor, the locking chain must carry real Bangla weight (rule 4
+above). The weight rule was hardened after the reverse battery caught
+"to the <loan>" chains and 2-strong name/island pairs converting inside
+English sentences. Documented trade-off: "Office e giye dekhi server down."
+(a Bangla verb pair next to English nouns with no frame word) now stays Latin
+- at that density a verb pair is indistinguishable from a name pair, and when
+in doubt the engine preserves.
 
 ## Typing path vs voice path (Hinglish parity contract)
 
@@ -158,3 +178,16 @@ English-set collisions like `ke` (English-set for chain purposes, converts as
 a loan কে inside locked Bangla zones) and name/brand chains in otherwise
 English text (e.g. `Samsung Google Apple`) lock as Bangla - entity lists are
 V29 scope, documented in the loan-spelling caveat.
+
+
+## Amendment: reverse-leak round (v28d, 2026-09-23)
+
+After a field report of English dictation occasionally rendering as Bengali,
+a dedicated 39-case reverse battery found 11 residual failures in three
+classes (function-word bridge into a lone loan; adjacent 2-strong name/island
+pairs; zone-split misfire on 2-word islands). Fixed by the weight rule (rule
+4) and the zone-split threshold (rule 6). Re-verified on the rebuilt signed
+bytes: reverse 39/39, corpus zero drift, all prior suites byte-identical to
+their green records, hand battery 85/85, fuzz 720/720. Trade-off documented in
+the anchor+weight section above. CI smoke passed on the exact production
+bytes (run 35773952365).
