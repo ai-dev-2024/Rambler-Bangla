@@ -27,3 +27,13 @@ modification notices retained in each source file.
   Do not redistribute patched Gboard APKs: Google's binaries, models, and
   keys are not licensed for redistribution, and the GPL covering this patch
   layer grants no rights over them.
+
+## V29 dictionary data (Tier-1 normalization table)
+
+- **Avro Keyboard phonetic dictionary** (OthmanAhmad/Avro Keyboard project,
+  Mozilla Public License 2.0) - the romanized-Bangla to Bangla spelling pairs
+  underlying the V29 Tier-1 normalization table (2,247 alphabetic pairs,
+  plus 18 pairs from MK's own field corpus which take precedence on
+  conflict). MPL 2.0 license text: https://mozilla.org/MPL/2.0/
+- cmudict (BSD) is NOT shipped in V29; it is reserved for the post-test-pass
+  Tier-1b derivation workstream.
