@@ -134,6 +134,25 @@ jobs:
             adb shell ime list -s > smoke-artifacts/ime-list-after.txt
             grep -F -q "$(cat smoke-artifacts/ime-id.txt)" smoke-artifacts/ime-list-after.txt
             echo "Registered and enabled IME: $(cat smoke-artifacts/ime-id.txt)" | tee smoke-artifacts/ime-result.txt
+            # End-user typing exercise: focus Android Settings search so the selected Rambler IME owns a real EditText.
+            adb shell am start -a android.settings.SETTINGS > smoke-artifacts/text-target-launch.txt
+            sleep 2
+            adb shell input keyevent KEYCODE_SEARCH
+            sleep 2
+            adb shell dumpsys input_method > smoke-artifacts/input-method-before-typing.txt
+            grep -F -q "mCurMethodId=$(cat smoke-artifacts/ime-id.txt)" smoke-artifacts/input-method-before-typing.txt
+            grep -E -q "mInputShown=true|mIsInputViewShown=true" smoke-artifacts/input-method-before-typing.txt
+            adb shell input text 'বাংলা' | tee smoke-artifacts/type-command.txt
+            sleep 2
+            adb shell uiautomator dump /sdcard/typed-window.xml
+            adb pull /sdcard/typed-window.xml smoke-artifacts/typed-window.xml
+            grep -F -q 'বাংলা' smoke-artifacts/typed-window.xml
+            adb exec-out screencap -p > smoke-artifacts/after-bengali-typing.png
+            printf '%s\n' 'বাংলা' > smoke-artifacts/expected-bengali.txt
+            echo "Rambler typing target received Bengali text: বাংলা" | tee smoke-artifacts/typing-result.txt
+            adb logcat -d -v threadtime > smoke-artifacts/logcat-after-typing.txt
+            if grep -A1 "FATAL EXCEPTION" smoke-artifacts/logcat-after-typing.txt | grep -q "Process: $PACKAGE_NAME"; then echo "Fatal exception for $PACKAGE_NAME found after typing" >&2; exit 1; fi
+            if grep -q "ANR in $PACKAGE_NAME" smoke-artifacts/logcat-after-typing.txt; then echo "ANR for $PACKAGE_NAME found after typing" >&2; exit 1; fi
 
       - name: Upload smoke evidence
         if: always()
