@@ -42,14 +42,22 @@ typing path run V27.11 code unchanged.
    - `bangla`/`bengali` are neutral (language names used in both languages).
 4. **Hysteresis**: a chain of 2+ strong/function words (one-word loan gaps
    allowed) locks the segment to Bangla. A single strong word only converts
-   when no English-set word appears in the segment. This is the brief's "a run
-   of 2+ words flips; a single weak word does not".
-5. **Zone split for boundary-less dictation**: when ASR delivers one long
+   when no English-set word appears anywhere in the utterance - sentence
+   punctuation and lowercase discourse markers split segments, and a name
+   isolated into its own one-word segment ("Rahim and Karim will come to the
+   office tomorrow.") would otherwise convert because the tiny segment alone
+   contains no English. This is the brief's "a run of 2+ words flips; a single
+   weak word does not".
+5. **Protected spans**: URLs, emails, @handles, and digit-suffixed am/pm times
+   (3:30pm) are marked protected before any language decision: they render
+   byte-identical everywhere and are transparent to chain evidence (a handle
+   never anchors a Bangla lock).
+6. **Zone split for boundary-less dictation**: when ASR delivers one long
    stretch with no punctuation, a real language switch shows up as a long
    English chain. If a segment contains both a >=4-word English chain and a
    >=2-word Bangla chain, it splits into zones at the chain starts and each
    zone is classified on its own. Shorter English chains remain embedded loans.
-6. **Render**: Bangla segments convert every word token through the engine's
+7. **Render**: Bangla segments convert every word token through the engine's
    own converters (`convertToken` / `convertTokenLoan`, including English
    loans, exactly as the k1 layout renders them); English segments pass through
    byte-identical. Diag counters and logging match V27.11's conventions.
@@ -113,3 +121,40 @@ An independent deep-research pass (Google Assistant/Gboard multilingual architec
 - **Deferred to V30:** speech-aware routing from interim ASR hypotheses/timestamps (text-only restoration is the honest V28/V29 claim); compact joint segment model trained on real device dumps; opt-in de-identified corpus with speaker-held-out evaluation.
 - **Licensing:** IndicLID + IndicXlit (AI4Bharat) are MIT - borrowable with attribution in V29+. Varnam/libindic/HeliBoard/OpenBoard are AGPL/GPL - architecture reference only, no code copying (see LICENSING-AUDIT.md).
 - **Hardening matrix (section 6 of the research brief):** classes already covered by the V28 rig: rapid alternation, single-token islands, entities, homographs, protected spans, punctuation-less ASR, contractions, adversarial English/Bangla. Classes intentionally untested in V28 (need V29 tokenizer/model work): mixed morphology, roman-variation normalization, conjunct ranking, interim churn rollback, acoustic stress, long-session drift.
+
+
+## Amendment: stress battery round 2 (2026-09-23)
+
+After delivery of the anchor-fixed build, an order-of-magnitude larger battery
+ran against the exact signed production bytes (hand cases + seeded fuzz,
+invariant-oracle checked). Two real defects surfaced and were fixed:
+
+1. **@handle conversion** - `@ramblerdev` converted to phonetic Bengali in all
+   positions (the `@` is a segment boundary, isolating the handle into a
+   one-word segment). Handles are now protected spans like URLs/emails.
+2. **Isolated-entity conversion** - `Rahim and Karim will come to the office
+   tomorrow.` converted `Rahim` (discourse-marker boundary at `and` isolated
+   it; the one-word segment trivially had no English). The single-strong-word
+   rule now requires zero English-set evidence in the whole utterance, not just
+   the segment: `Jai.` and `Ami jabo. Porbo.` still convert, names inside
+   English sentences stay Latin. A follow-up fuzz pass also caught `3:30pm`
+   losing its `pm` inside locked Bangla zones (the tokenizer splits the time;
+   digits always survive but `pm` is not in the English set) - am/pm after a
+   digit is now protected too.
+
+Re-verified on the rebuilt, re-signed production bytes (dex2jar ground-truth
+rig): 19-line corpus k1/k3 byte-identical to V27.11, k2 12 intended diffs + 1
+same (profile unchanged); design matrix 9/9; adversarial 14/14; hardening
+15/15 (outputs byte-identical to the pre-stress green set); hand battery 85/85
+across long multi-switch, rapid alternation, function-word chains, H6 boundary
+runs, entities, numbers, protected spans, punctuation, homographs, and
+pure-English/pure-Bangla floors; seeded fuzz 720/720 (12 seeds x 60 mixes,
+invariants: never empty/crash, protected spans + digit runs + version tokens
+verbatim, pure-English byte-identical, a run of 3+ bare Bangla words always
+renders Bengali, no control characters).
+
+Known inherited behavior (unchanged from V27.11, not a regression): rare
+English-set collisions like `ke` (English-set for chain purposes, converts as
+a loan কে inside locked Bangla zones) and name/brand chains in otherwise
+English text (e.g. `Samsung Google Apple`) lock as Bangla - entity lists are
+V29 scope, documented in the loan-spelling caveat.
