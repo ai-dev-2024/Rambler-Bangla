@@ -24,11 +24,13 @@ env:
 
 jobs:
   smoke:
-    # Apple Silicon runner: the APK is arm64-v8a-only, so we boot an arm64-v8a
-    # system image with native Hypervisor.framework acceleration. x86_64 images
-    # would false-fail with INSTALL_FAILED_NO_MATCHING_ABIS (ARM translation is
-    # not reliable enough across API 35 images to gate on).
-    runs-on: macos-14
+    # The APK is arm64-v8a-only. macos-14 (Apple Silicon) cannot boot the AVD:
+    # its hosted runners cannot initialize HVF ("HVF error: HV_UNSUPPORTED").
+    # API 35 google_apis x86_64 system images ship Google's built-in NDK/ARM
+    # translation, so the arm64-only APK installs and runs on a KVM-accelerated
+    # x86_64 emulator on ubuntu-latest (same approach ReactiveCircus
+    # android-emulator-runner issue #458 documents as working).
+    runs-on: ubuntu-latest
     timeout-minutes: 25
 
     steps:
@@ -62,17 +64,25 @@ jobs:
             echo "Download failed from host: $host" >&2
             exit 1
           fi
-          echo "$EXPECTED_SHA256  $APK_PATH" | shasum -a 256 --check --strict
+          echo "$EXPECTED_SHA256  $APK_PATH" | sha256sum --check --strict
           ls -lh "$APK_PATH"
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       - name: Install, launch, and inspect APK
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
-          arch: arm64-v8a
+          arch: x86_64
           target: google_apis
-          profile: pixel_6
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          profile: pixel_5
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
             set -euo pipefail
@@ -80,6 +90,9 @@ jobs:
 
             adb wait-for-device
             adb shell getprop > smoke-artifacts/device-properties.txt
+            grep -E 'ro.product.cpu.abilist|ro.build.version.sdk' \
+              smoke-artifacts/device-properties.txt \
+              | tee smoke-artifacts/abi-report.txt || true
             adb logcat -c
 
             adb install --no-streaming -r -t "$APK_PATH" \
