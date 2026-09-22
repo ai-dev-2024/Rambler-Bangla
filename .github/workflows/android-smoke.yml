@@ -85,7 +85,10 @@ jobs:
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -euo pipefail
+            # Runs under /bin/sh (dash) on ubuntu runners - keep this POSIX:
+            # no pipefail, no [[ ]]. Critical pipelines are gated by explicit
+            # output checks instead of pipefail.
+            set -eu
             mkdir -p smoke-artifacts
 
             adb wait-for-device
@@ -97,8 +100,11 @@ jobs:
 
             adb install --no-streaming -r -t "$APK_PATH" \
               | tee smoke-artifacts/install.txt
+            grep -F -q "Success" smoke-artifacts/install.txt
+
             adb shell pm path "$PACKAGE_NAME" \
               | tee smoke-artifacts/package-path.txt
+            grep -F -q "$PACKAGE_NAME" smoke-artifacts/package-path.txt
             adb shell dumpsys package "$PACKAGE_NAME" \
               > smoke-artifacts/package-dump.txt
 
@@ -110,10 +116,10 @@ jobs:
             grep -F -q "Events injected: 1" smoke-artifacts/launch.txt
             sleep 8
 
-            # Process/window state after launch: the app process must be alive
-            # and something from the package should be in the window/activity dumps.
+            # Process/window state after launch: the app process must be alive.
             adb shell pidof "$PACKAGE_NAME" \
               | tee smoke-artifacts/pid-after-launch.txt
+            test -s smoke-artifacts/pid-after-launch.txt
             adb shell dumpsys window windows \
               > smoke-artifacts/windows-after-launch.txt
             adb shell dumpsys activity activities \
@@ -142,7 +148,7 @@ jobs:
             adb shell ime list -a > smoke-artifacts/ime-list-before.txt
             IME_ID="$(adb shell ime list -s | tr -d '\r' \
               | grep -m1 "^${PACKAGE_NAME}/" || true)"
-            if [[ -z "$IME_ID" ]]; then
+            if [ -z "$IME_ID" ]; then
               echo "No registered IME service found for $PACKAGE_NAME" >&2
               exit 1
             fi
