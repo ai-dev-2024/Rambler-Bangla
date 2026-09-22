@@ -36,8 +36,8 @@ byte-for-byte (k1/k2/k3).
   pass (boundary-less mixed dictation needed the zone-split rule).
 
 ## Artifacts
-- V28 production: SHA-256 c10c9aa7d23cb784674c9c7f07cb979cf3fe338f0310fc70ce22fe168e72c6a5
-- V28 staging:    SHA-256 8cee92e8ae4ad75d5ed5875565e0920f9b9b76de0018da1e3edacb1621f6e07d
+- V28 production: SHA-256 ae0f998935a061028eba01cdfd45af90bd9ca40f66e52c3b2ac0130503392828
+- V28 staging:    SHA-256 96335c52bb513e29dcd953acc796be1c411a66684b37f8bc7deaa3526d54ec4e
 - Native libraries preserved byte-identical; extractNativeLibs=false alignment
   kept (4096, zipalign -c passes). Final signed APKs contain exactly the patched
   dexes (SHA-verified inside the signed artifacts).
@@ -67,3 +67,23 @@ restored). The superseded first candidate (prod sha
 f2490090dfa2a490dcacb2bedfaa467650a4187ed95380dc62487363c2b27514, staging sha
 a98b2351f24eedc1c92f33a18f198684552bff335a679af1f274a6607a0ba50c) must not be
 distributed. Final SHAs above supersede it.
+
+
+## Amendment 2: V28 stress-battery respin (2026-09-23)
+
+The post-delivery stress battery (85 hand cases + 720 seeded fuzz mixes with
+invariant oracles) found two real defects in the anchor-fixed build: @handles
+converted everywhere (the documented handle protection did not exist in the
+build) and discourse-marker/punctuation boundaries isolated names into
+one-word segments that converted (e.g. Rahim in "Rahim and Karim will
+come..."). Fixes, both in GboardRamblerSegmentLock.java: (a) @handle spans
+join URLs/emails in the protected-span set; (b) the single-strong-word rule
+now requires zero English-set evidence in the whole utterance; (c) am/pm after
+a digit is protected (3:30pm kept byte-identical inside locked Bangla zones).
+Full re-verification on the rebuilt signed bytes: corpus k1/k3 byte-identical,
+k2 12+1 profile unchanged, matrix 9/9, adversarial 14/14, hardening 15/15
+byte-identical to the prior green set, hand battery 85/85, fuzz 720/720.
+Resigned with the same V22 certificate (installs as an update).
+The previous build (prod sha c10c9aa7d23cb784674c9c7f07cb979cf3fe338f0310fc70ce22fe168e72c6a5,
+staging sha 8cee92e8ae4ad75d5ed5875565e0920f9b9b76de0018da1e3edacb1621f6e07d)
+is superseded and must not be distributed. Final SHAs above supersede it.
