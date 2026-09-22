@@ -137,5 +137,11 @@ ledger/v28-provenance.md. The k1 (full Bangla) and k3 (en-US) layouts and the
 typing path are unchanged (byte-verified against the V27.11 log corpus). An
 extended stress battery (85 hand cases + 720 seeded fuzz mixes against the
 exact signed bytes) passed after two more targeted fixes (@handle protection;
-names isolated by punctuation boundaries) - see the ledger.
+names isolated by punctuation boundaries). A reverse-direction leak battery
+(39 cases, built from a field report of English dictation rendering as
+Bengali) then caught three residual classes and the weight rule + zone-split
+threshold fixes closed all 39. Current build v28d: production SHA-256
+5889214e492541fa6024f03e023ae471e55f7d300395d0027235d81a7ef85362, staging
+SHA-256 e88511d2f7b7e28dfcbf1d21cb1f37db096cc5bc435d3afe3a1d9cbe735b9631,
+CI smoke green on the exact bytes - see the ledger.
 
