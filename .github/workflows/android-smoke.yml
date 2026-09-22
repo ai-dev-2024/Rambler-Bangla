@@ -125,7 +125,7 @@ jobs:
             if grep -q "ANR in $PACKAGE_NAME" smoke-artifacts/logcat.txt; then echo "ANR for $PACKAGE_NAME found in logcat" >&2; exit 1; fi
             # IME smoke check: Android must register the input-method service and accept enable/select in this disposable AVD. Not proof of OEM Settings UX or dictation.
             adb shell ime list -a > smoke-artifacts/ime-list-before.txt
-            adb shell ime list -s | tr -d '\r' | grep -m1 "^${PACKAGE_NAME}/" > smoke-artifacts/ime-id.txt || true
+            adb shell ime list -a -s | tr -d '\r' | grep -m1 "^${PACKAGE_NAME}/" > smoke-artifacts/ime-id.txt || true
             if [ ! -s smoke-artifacts/ime-id.txt ]; then echo "No registered IME service found for $PACKAGE_NAME" >&2; exit 1; fi
             adb shell ime enable "$(cat smoke-artifacts/ime-id.txt)" | tee smoke-artifacts/ime-enable.txt
             adb shell ime set "$(cat smoke-artifacts/ime-id.txt)" | tee smoke-artifacts/ime-set.txt
