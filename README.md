@@ -134,4 +134,8 @@ classified once (Bangla vs English) and rendered entirely in that language,
 replacing the per-word convert/keep that scrambled mixed dictation in V27.11.
 Design and test evidence: docs/V28-SEGMENT-LOCK.md. Build record:
 ledger/v28-provenance.md. The k1 (full Bangla) and k3 (en-US) layouts and the
-typing path are unchanged (byte-verified against the V27.11 log corpus).
+typing path are unchanged (byte-verified against the V27.11 log corpus). An
+extended stress battery (85 hand cases + 720 seeded fuzz mixes against the
+exact signed bytes) passed after two more targeted fixes (@handle protection;
+names isolated by punctuation boundaries) - see the ledger.
+
