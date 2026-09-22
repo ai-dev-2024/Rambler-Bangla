@@ -126,3 +126,12 @@ smali/baksmali/dexlib2 2.5.2 + deps (Maven Central), r8/d8 8.3.37, aapt2
   hypothesis-stage and OFF by default; Bengali is absent from Google's
   official Rambler tuned-language list, so remote Base/S may Romanize
   regardless of any client patch.
+
+## V28 status (2026-09-23)
+
+The multilingual voice path is now segment-locked: each dictated segment is
+classified once (Bangla vs English) and rendered entirely in that language,
+replacing the per-word convert/keep that scrambled mixed dictation in V27.11.
+Design and test evidence: docs/V28-SEGMENT-LOCK.md. Build record:
+ledger/v28-provenance.md. The k1 (full Bangla) and k3 (en-US) layouts and the
+typing path are unchanged (byte-verified against the V27.11 log corpus).
