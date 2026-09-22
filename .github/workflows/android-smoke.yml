@@ -85,84 +85,48 @@ jobs:
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
-            # Runs under /bin/sh (dash) on ubuntu runners - keep this POSIX:
-            # no pipefail, no [[ ]]. Critical pipelines are gated by explicit
-            # output checks instead of pipefail.
-            set -eu
+            # android-emulator-runner runs each LINE as a separate `/bin/sh -c`
+            # command (dash on ubuntu): no line continuations, no multi-line if
+            # blocks, and no shell variables persisting across lines. Keep every
+            # command self-contained on one line; intermediate values live in
+            # smoke-artifacts files.
             mkdir -p smoke-artifacts
-
             adb wait-for-device
             adb shell getprop > smoke-artifacts/device-properties.txt
-            grep -E 'ro.product.cpu.abilist|ro.build.version.sdk' \
-              smoke-artifacts/device-properties.txt \
-              | tee smoke-artifacts/abi-report.txt || true
+            grep -E "ro.product.cpu.abilist|ro.build.version.sdk" smoke-artifacts/device-properties.txt | tee smoke-artifacts/abi-report.txt || true
             adb logcat -c
-
-            adb install --no-streaming -r -t "$APK_PATH" \
-              | tee smoke-artifacts/install.txt
+            adb install --no-streaming -r -t "$APK_PATH" | tee smoke-artifacts/install.txt
             grep -F -q "Success" smoke-artifacts/install.txt
-
-            adb shell pm path "$PACKAGE_NAME" \
-              | tee smoke-artifacts/package-path.txt
+            adb shell pm path "$PACKAGE_NAME" | tee smoke-artifacts/package-path.txt
             grep -F -q "$PACKAGE_NAME" smoke-artifacts/package-path.txt
-            adb shell dumpsys package "$PACKAGE_NAME" \
-              > smoke-artifacts/package-dump.txt
-
-            # Launch the package's launcher activity. `monkey` does not need the
-            # activity class name and exits non-zero if no launchable activity exists.
-            adb shell monkey -p "$PACKAGE_NAME" \
-              -c android.intent.category.LAUNCHER 1 \
-              | tee smoke-artifacts/launch.txt
+            adb shell dumpsys package "$PACKAGE_NAME" > smoke-artifacts/package-dump.txt
+            # Launch via monkey: no activity class name needed; exits non-zero if no launchable activity exists.
+            adb shell monkey -p "$PACKAGE_NAME" -c android.intent.category.LAUNCHER 1 | tee smoke-artifacts/launch.txt
             grep -F -q "Events injected: 1" smoke-artifacts/launch.txt
             sleep 8
-
-            # Process/window state after launch: the app process must be alive.
-            adb shell pidof "$PACKAGE_NAME" \
-              | tee smoke-artifacts/pid-after-launch.txt
+            # The app process must be alive after launch.
+            adb shell pidof "$PACKAGE_NAME" | tee smoke-artifacts/pid-after-launch.txt
             test -s smoke-artifacts/pid-after-launch.txt
-            adb shell dumpsys window windows \
-              > smoke-artifacts/windows-after-launch.txt
-            adb shell dumpsys activity activities \
-              > smoke-artifacts/activities-after-launch.txt
+            adb shell dumpsys window windows > smoke-artifacts/windows-after-launch.txt
+            adb shell dumpsys activity activities > smoke-artifacts/activities-after-launch.txt
             adb exec-out screencap -p > smoke-artifacts/after-launch.png
             adb shell uiautomator dump /sdcard/window.xml || true
             adb pull /sdcard/window.xml smoke-artifacts/window.xml || true
             adb logcat -d -v threadtime > smoke-artifacts/logcat.txt
-
-            # Fail only on a fatal crash or ANR actually tied to this package.
-            # FATAL EXCEPTION prints "Process: <package>" on the following line;
-            # match the pair instead of any benign "Process:" line.
-            if grep -A1 "FATAL EXCEPTION" smoke-artifacts/logcat.txt \
-                | grep -q "Process: $PACKAGE_NAME"; then
-              echo "Fatal exception for $PACKAGE_NAME found in logcat" >&2
-              exit 1
-            fi
-            if grep -q "ANR in $PACKAGE_NAME" smoke-artifacts/logcat.txt; then
-              echo "ANR for $PACKAGE_NAME found in logcat" >&2
-              exit 1
-            fi
-
-            # IME registration/enable smoke check. This verifies that Android sees the
-            # input-method service and that it can be enabled in this disposable AVD.
-            # It does not prove real-device OEM Settings UX or end-to-end dictation.
+            # Fail only on a fatal crash/ANR tied to this package: FATAL EXCEPTION prints "Process: <package>" on the following line, so match the pair.
+            if grep -A1 "FATAL EXCEPTION" smoke-artifacts/logcat.txt | grep -q "Process: $PACKAGE_NAME"; then echo "Fatal exception for $PACKAGE_NAME found in logcat" >&2; exit 1; fi
+            if grep -q "ANR in $PACKAGE_NAME" smoke-artifacts/logcat.txt; then echo "ANR for $PACKAGE_NAME found in logcat" >&2; exit 1; fi
+            # IME smoke check: Android must register the input-method service and accept enable/select in this disposable AVD. Not proof of OEM Settings UX or dictation.
             adb shell ime list -a > smoke-artifacts/ime-list-before.txt
-            IME_ID="$(adb shell ime list -s | tr -d '\r' \
-              | grep -m1 "^${PACKAGE_NAME}/" || true)"
-            if [ -z "$IME_ID" ]; then
-              echo "No registered IME service found for $PACKAGE_NAME" >&2
-              exit 1
-            fi
-            adb shell ime enable "$IME_ID" \
-              | tee smoke-artifacts/ime-enable.txt
-            adb shell ime set "$IME_ID" \
-              | tee smoke-artifacts/ime-set.txt
-            adb shell settings get secure default_input_method \
-              | tee smoke-artifacts/default-input-method.txt
-            grep -F -q "$IME_ID" smoke-artifacts/default-input-method.txt
+            adb shell ime list -s | tr -d '\r' | grep -m1 "^${PACKAGE_NAME}/" > smoke-artifacts/ime-id.txt || true
+            if [ ! -s smoke-artifacts/ime-id.txt ]; then echo "No registered IME service found for $PACKAGE_NAME" >&2; exit 1; fi
+            adb shell ime enable "$(cat smoke-artifacts/ime-id.txt)" | tee smoke-artifacts/ime-enable.txt
+            adb shell ime set "$(cat smoke-artifacts/ime-id.txt)" | tee smoke-artifacts/ime-set.txt
+            adb shell settings get secure default_input_method | tee smoke-artifacts/default-input-method.txt
+            grep -F -q "$(cat smoke-artifacts/ime-id.txt)" smoke-artifacts/default-input-method.txt
             adb shell ime list -s > smoke-artifacts/ime-list-after.txt
-            grep -F -q "$IME_ID" smoke-artifacts/ime-list-after.txt
-            echo "Registered and enabled IME: $IME_ID" \
-              | tee smoke-artifacts/ime-result.txt
+            grep -F -q "$(cat smoke-artifacts/ime-id.txt)" smoke-artifacts/ime-list-after.txt
+            echo "Registered and enabled IME: $(cat smoke-artifacts/ime-id.txt)" | tee smoke-artifacts/ime-result.txt
 
       - name: Upload smoke evidence
         if: always()
