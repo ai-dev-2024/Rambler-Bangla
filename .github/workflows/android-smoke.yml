@@ -1,0 +1,155 @@
+name: Rambler production APK smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: "HTTPS URL for the production APK (short-lived host URLs OK; host must be allowlisted)"
+        required: true
+        type: string
+  # Optional: invoke from another workflow and pass a URL from its outputs.
+  workflow_call:
+    inputs:
+      apk_url:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  PACKAGE_NAME: com.aidev2024.ramblerbangla
+  EXPECTED_SHA256: 6976d6a4483d3e98ad94c5e86e73dff8f608d55012d010d444184a1fc084588b
+  APK_PATH: ${{ github.workspace }}/rambler-production.apk
+
+jobs:
+  smoke:
+    # Apple Silicon runner: the APK is arm64-v8a-only, so we boot an arm64-v8a
+    # system image with native Hypervisor.framework acceleration. x86_64 images
+    # would false-fail with INSTALL_FAILED_NO_MATCHING_ABIS (ARM translation is
+    # not reliable enough across API 35 images to gate on).
+    runs-on: macos-14
+    timeout-minutes: 25
+
+    steps:
+      - name: Validate APK host and download APK
+        env:
+          APK_URL: ${{ inputs.apk_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$APK_URL"
+          if [[ "$APK_URL" != https://* ]]; then
+            echo "APK URL must use https" >&2
+            exit 1
+          fi
+          host="${APK_URL#https://}"
+          host="${host%%/*}"
+          host="$(printf '%s' "$host" | tr 'A-Z' 'a-z')"
+          case "$host" in
+            litter.catbox.moe|catbox.moe|gofile.io|store*.gofile.io)
+              echo "APK host allowlisted: $host"
+              ;;
+            *)
+              echo "APK host not allowlisted: $host" >&2
+              exit 1
+              ;;
+          esac
+          # Only the host is ever logged; the full URL stays out of the logs.
+          if ! curl -sS --fail --location --retry 3 --retry-all-errors \
+              --connect-timeout 30 --max-time 300 \
+              --output "$APK_PATH" "$APK_URL" 2>download.err; then
+            echo "Download failed from host: $host" >&2
+            exit 1
+          fi
+          echo "$EXPECTED_SHA256  $APK_PATH" | shasum -a 256 --check --strict
+          ls -lh "$APK_PATH"
+
+      - name: Install, launch, and inspect APK
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          arch: arm64-v8a
+          target: google_apis
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p smoke-artifacts
+
+            adb wait-for-device
+            adb shell getprop > smoke-artifacts/device-properties.txt
+            adb logcat -c
+
+            adb install --no-streaming -r -t "$APK_PATH" \
+              | tee smoke-artifacts/install.txt
+            adb shell pm path "$PACKAGE_NAME" \
+              | tee smoke-artifacts/package-path.txt
+            adb shell dumpsys package "$PACKAGE_NAME" \
+              > smoke-artifacts/package-dump.txt
+
+            # Launch the package's launcher activity. `monkey` does not need the
+            # activity class name and exits non-zero if no launchable activity exists.
+            adb shell monkey -p "$PACKAGE_NAME" \
+              -c android.intent.category.LAUNCHER 1 \
+              | tee smoke-artifacts/launch.txt
+            grep -F -q "Events injected: 1" smoke-artifacts/launch.txt
+            sleep 8
+
+            # Process/window state after launch: the app process must be alive
+            # and something from the package should be in the window/activity dumps.
+            adb shell pidof "$PACKAGE_NAME" \
+              | tee smoke-artifacts/pid-after-launch.txt
+            adb shell dumpsys window windows \
+              > smoke-artifacts/windows-after-launch.txt
+            adb shell dumpsys activity activities \
+              > smoke-artifacts/activities-after-launch.txt
+            adb exec-out screencap -p > smoke-artifacts/after-launch.png
+            adb shell uiautomator dump /sdcard/window.xml || true
+            adb pull /sdcard/window.xml smoke-artifacts/window.xml || true
+            adb logcat -d -v threadtime > smoke-artifacts/logcat.txt
+
+            # Fail only on a fatal crash or ANR actually tied to this package.
+            # FATAL EXCEPTION prints "Process: <package>" on the following line;
+            # match the pair instead of any benign "Process:" line.
+            if grep -A1 "FATAL EXCEPTION" smoke-artifacts/logcat.txt \
+                | grep -q "Process: $PACKAGE_NAME"; then
+              echo "Fatal exception for $PACKAGE_NAME found in logcat" >&2
+              exit 1
+            fi
+            if grep -q "ANR in $PACKAGE_NAME" smoke-artifacts/logcat.txt; then
+              echo "ANR for $PACKAGE_NAME found in logcat" >&2
+              exit 1
+            fi
+
+            # IME registration/enable smoke check. This verifies that Android sees the
+            # input-method service and that it can be enabled in this disposable AVD.
+            # It does not prove real-device OEM Settings UX or end-to-end dictation.
+            adb shell ime list -a > smoke-artifacts/ime-list-before.txt
+            IME_ID="$(adb shell ime list -s | tr -d '\r' \
+              | grep -m1 "^${PACKAGE_NAME}/" || true)"
+            if [[ -z "$IME_ID" ]]; then
+              echo "No registered IME service found for $PACKAGE_NAME" >&2
+              exit 1
+            fi
+            adb shell ime enable "$IME_ID" \
+              | tee smoke-artifacts/ime-enable.txt
+            adb shell ime set "$IME_ID" \
+              | tee smoke-artifacts/ime-set.txt
+            adb shell settings get secure default_input_method \
+              | tee smoke-artifacts/default-input-method.txt
+            grep -F -q "$IME_ID" smoke-artifacts/default-input-method.txt
+            adb shell ime list -s > smoke-artifacts/ime-list-after.txt
+            grep -F -q "$IME_ID" smoke-artifacts/ime-list-after.txt
+            echo "Registered and enabled IME: $IME_ID" \
+              | tee smoke-artifacts/ime-result.txt
+
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rambler-apk-smoke-${{ github.run_id }}
+          path: smoke-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
