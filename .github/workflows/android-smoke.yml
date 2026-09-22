@@ -7,10 +7,17 @@ on:
         description: "HTTPS URL for the production APK (short-lived host URLs OK; host must be allowlisted)"
         required: true
         type: string
-  # Optional: invoke from another workflow and pass a URL from its outputs.
+      expected_sha256:
+        description: "SHA-256 of the APK at apk_url; download fails closed on mismatch"
+        required: true
+        type: string
+  # Optional: invoke from another workflow and pass URL + SHA from its outputs.
   workflow_call:
     inputs:
       apk_url:
+        required: true
+        type: string
+      expected_sha256:
         required: true
         type: string
 
@@ -19,7 +26,7 @@ permissions:
 
 env:
   PACKAGE_NAME: com.aidev2024.ramblerbangla
-  EXPECTED_SHA256: 6976d6a4483d3e98ad94c5e86e73dff8f608d55012d010d444184a1fc084588b
+  EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
   APK_PATH: ${{ github.workspace }}/rambler-production.apk
 
 jobs:
