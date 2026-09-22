@@ -36,15 +36,16 @@ byte-for-byte (k1/k2/k3).
   pass (boundary-less mixed dictation needed the zone-split rule).
 
 ## Artifacts
-- V28 production: SHA-256 ae0f998935a061028eba01cdfd45af90bd9ca40f66e52c3b2ac0130503392828
-- V28 staging:    SHA-256 96335c52bb513e29dcd953acc796be1c411a66684b37f8bc7deaa3526d54ec4e
+- V28 production (v28d): SHA-256 5889214e492541fa6024f03e023ae471e55f7d300395d0027235d81a7ef85362
+- V28 staging (v28d):    SHA-256 e88511d2f7b7e28dfcbf1d21cb1f37db096cc5bc435d3afe3a1d9cbe735b9631
 - Native libraries preserved byte-identical; extractNativeLibs=false alignment
   kept (4096, zipalign -c passes). Final signed APKs contain exactly the patched
   dexes (SHA-verified inside the signed artifacts).
 
 ## Gate
 - CI smoke (install + launch + IME register/enable on a disposable AVD):
-  see docs/V28-SEGMENT-LOCK.md for the run reference once dispatched.
+  passed on the exact v28d production bytes, run
+  https://github.com/ai-dev-2024/Rambler-Bangla/actions/runs/35773952365 (3m12s).
 
 ## Open items
 - Loan renderings inside Bangla segments come from the engine's existing
@@ -87,3 +88,51 @@ Resigned with the same V22 certificate (installs as an update).
 The previous build (prod sha c10c9aa7d23cb784674c9c7f07cb979cf3fe338f0310fc70ce22fe168e72c6a5,
 staging sha 8cee92e8ae4ad75d5ed5875565e0920f9b9b76de0018da1e3edacb1621f6e07d)
 is superseded and must not be distributed. Final SHAs above supersede it.
+
+## Amendment 3: reverse-leak respin - v28d (2026-09-23)
+
+Field report from the tester (MK): on the Amendment-2 build, English dictation
+occasionally produced Bengali renderings of English words (reverse-direction
+leak). A dedicated reverse battery (39 hand cases built around the symptom
+class) confirmed 11 residual failures in three classes:
+
+A. "to the <loan>" chain - "The office is next to the bazar." converted the
+   entire sentence (function word "to" + one-word English gap "the" + strong
+   loan "bazar" formed a locking chain of 2).
+B. Adjacent 2-strong islands - "Rahim Karim joined the call.", "He is my
+   choto bhai.", "biye bari", "morog polao": a chain of exactly 2 strong
+   words locked regardless of surrounding English density.
+C. Zone-split misfire - "We visited Kali Bari during the festival week.": the
+   boundary-less-switch detector cut at any 2-word Bangla run adjacent to a
+   4+ word English run, converting sandwiched 2-word islands.
+
+Fixes (both in GboardRamblerSegmentLock.java):
+
+1. A Bangla lock now requires real Bangla weight on top of the strong anchor:
+   the locking chain must have 3+ strong Bangla words, OR Bangla evidence at
+   least matching English evidence in the segment, OR a Bangla-frame function
+   word in the chain (ami/ta/ki/na/se/je; "to" and "er" excluded as common in
+   plain English prose). A lone strong word still converts only with zero
+   English-set words in the whole utterance. "Se office jabe na." still
+   converts; "to the bazar" and "Rahim Karim joined the call." don't.
+2. Zone-split English->Bangla cut threshold raised from 2 to 3 consecutive
+   Bangla-run words (the genuine-switch adversarial case has 3; still splits).
+
+Documented trade-off: "Office e giye dekhi server down." (a Bangla verb pair
+next to English nouns with no frame word) now stays Latin - the engine cannot
+distinguish a verb pair from a name pair at that density, and when in doubt it
+preserves. This is the only battery output drift vs the Amendment-2 build and
+it is the fail-safe direction for the reported symptom.
+
+Full re-verification on the rebuilt signed bytes (dex2jar ground-truth rig):
+reverse battery 39/39; 19-line corpus k1/k3 byte-identical to V27.11, k2 12
+intended diffs + 1 same (zero drift vs the Amendment-2 build); design matrix
+9/9, adversarial 14/14, hardening 15/15 byte-identical to the prior green
+records; hand battery 85/85; seeded fuzz 720/720. Re-signed with the same V22
+certificate (installs as an update). CI smoke passed on the exact production
+bytes (run 35773952365).
+
+The Amendment-2 build (prod sha
+ae0f998935a061028eba01cdfd45af90bd9ca40f66e52c3b2ac0130503392828, staging sha
+96335c52bb513e29dcd953acc796be1c411a66684b37f8bc7deaa3526d54ec4e) is
+superseded and must not be distributed. Final SHAs above supersede it.
