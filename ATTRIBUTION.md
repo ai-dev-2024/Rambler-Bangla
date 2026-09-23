@@ -34,6 +34,6 @@ modification notices retained in each source file.
   Mozilla Public License 2.0) - the romanized-Bangla to Bangla spelling pairs
   underlying the V29 Tier-1 normalization table (2,247 alphabetic pairs,
   plus 18 pairs from the maintainer's field corpus which take precedence on
-  conflict). MPL 2.0 license text: https://mozilla.org/MPL/2.0/
+  conflict; shipped total 2,265 pairs, verified on the shipped build 2026-09-23). MPL 2.0 license text: https://mozilla.org/MPL/2.0/
 - cmudict (BSD) is NOT shipped in V29; it is reserved for the post-test-pass
   Tier-1b derivation workstream.
