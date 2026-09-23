@@ -45,8 +45,10 @@ tabs, C++/C#/node.js tokens. Suite: /tmp/passthrough.txt (archived to v29/passth
 35/36 WRONG fixed byte-exact (only "but" unreachable: discourse-marker isolation keeps
 it a lone English segment - documented artifact). Zero regressions on OK/DIALECT entries;
 2 corrections vs v28d (office অফিস, taratari তাড়াতাড়ি) both canon-consistent.
-19 seed additions/overrides sourced from this corpus (maintainer soak spellings win conflicts:
-install ইনস্টল overrides Avro ইন্সটল).
+Seed additions/overrides sourced from this corpus (maintainer soak spellings win conflicts:
+install ইনস্টল overrides Avro ইন্সটল). Shipped Tier-1 total: 2,265 pairs (2,247
+Avro-derived plus maintainer-corpus additions/overrides), verified on the shipped
+build 2026-09-23.
 
 ## F. Known host-gate note (pre-existing, not a V29 change)
 The v27/v28 host voice path returns text unchanged when it already contains Bengali
