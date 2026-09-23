@@ -45,7 +45,7 @@ tabs, C++/C#/node.js tokens. Suite: /tmp/passthrough.txt (archived to v29/passth
 35/36 WRONG fixed byte-exact (only "but" unreachable: discourse-marker isolation keeps
 it a lone English segment - documented artifact). Zero regressions on OK/DIALECT entries;
 2 corrections vs v28d (office অফিস, taratari তাড়াতাড়ি) both canon-consistent.
-19 seed additions/overrides sourced from this corpus (MK soak spellings win conflicts:
+19 seed additions/overrides sourced from this corpus (maintainer soak spellings win conflicts:
 install ইনস্টল overrides Avro ইন্সটল).
 
 ## F. Known host-gate note (pre-existing, not a V29 change)
