@@ -1,13 +1,14 @@
 # V29 Provenance - segment-lock hardening + Bangla spelling normalization
 
 Date: 2026-09-23 (AEST). Builder: maintainer. Repo: ai-dev-2024/Rambler-Bangla.
+Status: FIELD ITERATION - V29 is in MK's field test with known open bugs (residual spelling errors, language-switch edge cases). This is a fix-lane build record, not a ship approval or release.
 Authorization: owner approval 2026-09-23,
 after loop review (external design review + engineering review) returned MODIFY-before-build;
 all amendments incorporated in docs/V29-DESIGN.md v2 (amendment map in section 9).
 
-## Artifacts (signed, v22 key, cert sha256 5ca0623a1f3beb027d3eb87ad0811e97db0ebb8736bd11af0831ab7d6bafbc31)
-- v29-prod.apk    sha256 c277b65e928f728936c3e5722ab7b80dcb1ad67c27616c114a71be4a62085f00  https://gofile.io/d/a0gGjAcA
-- v29-staging.apk sha256 6fc37a45c0ebfd8072adcb45b6aab05d56fb5e7a7a130324e7fac9a9361b03f6  https://gofile.io/d/HO0CVM4i
+## Artifacts (FIX-ITERATION / BUILD-ONLY - private field-test artifacts, not a release and not for distribution; signed, v22 key, cert sha256 5ca0623a1f3beb027d3eb87ad0811e97db0ebb8736bd11af0831ab7d6bafbc31)
+- v29-prod.apk    sha256 c277b65e928f728936c3e5722ab7b80dcb1ad67c27616c114a71be4a62085f00  https://gofile.io/d/a0gGjAcA (build-only test link)
+- v29-staging.apk sha256 6fc37a45c0ebfd8072adcb45b6aab05d56fb5e7a7a130324e7fac9a9361b03f6  https://gofile.io/d/HO0CVM4i (build-only test link)
 - classes-v29.dex sha256 94ad4f4e324cec5751d47846c41b855e654f437be2f303a07f4e3786dbf78347 (prod)
 - classes-v29-stg.dex sha256 6fdcd39cb4dfa550246c32e4cac2976fff289139bf63793e8d062874d377b5b6 (staging)
 - Rig jar (dex-derived, byte-fidelity gate): rambler-v29.jar from classes-v29.dex via dex2jar.
@@ -29,7 +30,15 @@ all amendments incorporated in docs/V29-DESIGN.md v2 (amendment map in section 9
 - EN pin: 14/14 byte-exact passthrough (punctuation, apostrophes, emoji, handles, URLs, mixed script, whitespace, numbers).
 - Demotion review: 108 ED1 collisions published (v29/collisions.json); zero false demotions on every protected corpus measured separately.
 - Spelling corpus (docs/spelling-corpus-v1.tsv): 35/36 WRONG fixed byte-exact; zero regressions on OK/DIALECT.
-- CI: android-smoke run #13 (this build) - result recorded below when green.
+- CI: android-smoke run #13 - SUCCESS (total 3m 24s; job smoke 3m 19s) on the exact prod bytes above
+  (runner downloaded the APK by sha from the tmpfiles upload; workflow android-smoke.yml, workflow_dispatch
+  by ai-dev-2024 on main). Run page: https://github.com/ai-dev-2024/Rambler-Bangla/actions/runs/35781711819
+  Steps green: validate APK host + download (5s); enable KVM; install, launch, and inspect APK on the
+  emulator (3m 9s); upload smoke evidence. Artifact rambler-apk-smoke-35781711819 (427 KB, digest
+  sha256:288e308d8c381eb8d4d6cd1beb9e8ca1c33ef31bff719f50bae5f03c1f298501).
+  Annotations: 1 warning + 1 notice (GitHub runner deprecations, non-failing).
+  Limitations: emulator smoke covers install + launch + IME enable/inspect only; it does not exercise
+  on-device dictation behavior, which remains MK's field test.
 
 ## Licenses
 - Avro phonetic canonical autocorrect DB: MPL 2.0 (attribution; source: avrolib.js/avrodict.js in-tree reference only).
