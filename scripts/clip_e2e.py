@@ -125,6 +125,11 @@ def finish(code):
     with open(os.path.join(OUT, "results.json"), "w") as f:
         json.dump(RESULTS, f, indent=2)
     log("RESULTS", json.dumps(RESULTS))
+    # Public run annotations: results and app debug lines are readable without downloading the artifact.
+    print("::notice title=clipboard-e2e results::" + json.dumps(RESULTS).replace("%", "%25"), flush=True)
+    dbg = [l[31:].strip() for l in lc.splitlines() if " RamblerClip: " in l][-8:]
+    for l in dbg:
+        print("::notice title=RamblerClip::" + l[:400].replace("%", "%25"), flush=True)
     sys.exit(code)
 
 
