@@ -19,7 +19,7 @@ docs/V29-DESIGN.md v2 (amendment map in section 9).
 - GboardRamblerSegmentLock.smali: A2 garble demotion (bounded ED1 + garble allowlist + 129-word PROTECT_BN),
   conservative morphology (doubled-consonant ed/ing), Tier-1 consult at emission (locked segments only),
   session pin machinery (AUTO/BN/EN, in-memory, 2-min inactivity reset; EN/BN unreachable from UI in this build).
-- GboardRamblerTier1.smali: NEW - 2,265 canonical roman->script pairs (Avro MPL 2.0 + 19 corpus overrides).
+- GboardRamblerTier1.smali: NEW - 2,265 canonical roman->script pairs (2,247 Avro MPL 2.0-derived + 18 maintainer-corpus additions + 19 corpus value overrides on conflict; composition byte-verified 2026-09-23).
 - GboardRamblerScriptFix.smali: UNTOUCHED (no hook changes; v28d k1/k3 paths byte-identical).
 
 ## Evidence (all on the dex-derived rig jar unless noted)
