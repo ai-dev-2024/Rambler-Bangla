@@ -133,23 +133,19 @@ def ime_nodes():
 
 
 def open_field():
-    cands = [
-        "shell am start -a android.intent.action.INSERT -t vnd.android.cursor.dir/contact",
-        "shell am start -a android.settings.APP_SEARCH_SETTINGS",
-    ]
-    for c in cands:
-        adb(c)
-        time.sleep(4)
+    # Contacts "Create contact" form: stable on google_apis images; can take a while on first launch.
+    adb("shell am start -W -a android.intent.action.INSERT -t vnd.android.cursor.dir/contact")
+    for attempt in range(8):
+        time.sleep(3)
         ns = nodes(snap("field"))
-        edits = [n for n in ns if n["cls"].endswith("EditText")]
-        log("field candidate", c, "edits", len(edits))
+        edits = [n for n in ns if n["cls"].endswith("EditText") and n["pkg"] != PKG]
+        log("field attempt", attempt, "edits", len(edits))
         if edits:
-            e = edits[0]
+            e = find(edits, r"^first name$", fields=("text",)) or edits[0]
             tap(e["cx"], e["cy"])
             time.sleep(1.5)
             return e
     return None
-
 
 def open_clipboard(field):
     tap(field["cx"], field["cy"])
