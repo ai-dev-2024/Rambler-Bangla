@@ -1,5 +1,5 @@
 # V29 spelling corpus v1 - romanized input (ASR-style) | current v28d converter output (rig, layout k1) | canonical standard spelling
-# class: loan=English loan word, native=Bangla native word. Sources: MK soak 05:45-05:49 + probe 05:55.
+# class: loan=English loan word, native=Bangla native word. Sources: maintainer soak 05:45-05:49 + probe 05:55.
 # input	class	current	canonical	status
 type	loan	টয়পে	টাইপ	WRONG
 english	loan	এংলিশ	ইংলিশ	WRONG
