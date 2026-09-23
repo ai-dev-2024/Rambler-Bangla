@@ -140,8 +140,18 @@ exact signed bytes) passed after two more targeted fixes (@handle protection;
 names isolated by punctuation boundaries). A reverse-direction leak battery
 (39 cases, built from a field report of English dictation rendering as
 Bengali) then caught three residual classes and the weight rule + zone-split
-threshold fixes closed all 39. Current build v28d: production SHA-256
+threshold fixes closed all 39. v28d remains the last stable baseline (superseded in field testing by V29, below): production SHA-256
 5889214e492541fa6024f03e023ae471e55f7d300395d0027235d81a7ef85362, staging
 SHA-256 e88511d2f7b7e28dfcbf1d21cb1f37db096cc5bc435d3afe3a1d9cbe735b9631,
 CI smoke green on the exact bytes - see the ledger.
 
+## V29 status (2026-09-23, in development)
+
+V29 is the current field-iteration build on the fix lane: A2 garble-ASR
+demotion plus Tier-1 Bangla spelling normalization on top of the V28 segment
+lock. It is NOT a stable release: this cycle's field reports documented open
+bugs (residual spelling errors, language-switch edge cases) and iteration is
+continuing in the open. Design: docs/V29-DESIGN.md. Acceptance fixtures:
+docs/V29-FIXTURES.md. Build record and rig/CI evidence:
+ledger/v29-provenance.md. Test APKs are shared privately with the project
+owner only; this repository distributes source, not APKs.
