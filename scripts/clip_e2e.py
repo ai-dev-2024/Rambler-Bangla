@@ -183,7 +183,12 @@ def open_clipboard(field):
 
 
 def main():
-    ime = sh("adb shell ime list -a -s | tr -d '\\r' | grep -m1 '^%s/'" % PKG).strip()
+    ime = ""
+    for attempt in range(20):  # package manager / IMMS can lag right after boot + install
+        ime = sh("adb shell ime list -a -s | tr -d '\\r' | grep -m1 '^%s/'" % PKG).strip()
+        if ime:
+            break
+        time.sleep(3)
     if not ime:
         fail(2, "IME not registered")
     adb("shell ime enable " + ime)
