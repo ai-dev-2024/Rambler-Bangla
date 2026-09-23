@@ -2,11 +2,11 @@
 
 ## Reporting a problem
 
-Please don't post details of a security problem in a public issue (for
-example, a leaked key, a way to make the patch apply to the wrong app build,
-or text leaking out of password fields). Open an issue titled "Security
-contact request" with no details, and the maintainer will reply with a
-private channel.
+Please don't open a public issue for security problems (for example, a
+leaked key, a way to make the patch apply to the wrong app build, or text
+leaking out of password fields). Report them privately instead: Security tab
+> Report a vulnerability
+(https://github.com/ai-dev-2024/Rambler-Bangla/security/advisories/new).
 
 ## Scope
 
