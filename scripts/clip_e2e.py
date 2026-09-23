@@ -135,9 +135,18 @@ def ime_nodes():
 def open_field():
     # Contacts "Create contact" form: stable on google_apis images; can take a while on first launch.
     adb("shell am start -W -a android.intent.action.INSERT -t vnd.android.cursor.dir/contact")
-    for attempt in range(8):
+    for attempt in range(12):
         time.sleep(3)
         ns = nodes(snap("field"))
+        anr = find(ns, r"isn't responding")
+        if anr:
+            # emulator boot flake (usually Pixel Launcher): wait it out, then retry the form
+            w = find(ns, r"^wait$", fields=("text",))
+            log("system ANR dialog:", anr["text"])
+            if w:
+                tap(w["cx"], w["cy"])
+            adb("shell am start -W -a android.intent.action.INSERT -t vnd.android.cursor.dir/contact")
+            continue
         edits = [n for n in ns if n["cls"].endswith("EditText") and n["pkg"] != PKG]
         log("field attempt", attempt, "edits", len(edits))
         if edits:
