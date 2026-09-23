@@ -20,7 +20,8 @@ transliteration is added and no cleanup stage is disabled.
   English near-match demotion plus a 2,265-pair canonical roman-to-script
   table, applied only inside locked Bangla segments.
 - **Side-by-side install**: the test build ships under its own package
-  identity (`com.aidev2024.ramblerbangla`) and installs alongside PixelBoard.
+  identity (`com.aidev2024.ramblerbangla`) and installs alongside the upstream
+  keyboard.
   The repository contains the rename tooling and audit documentation, but no
   APK, generated DEX, key, or other proprietary binary. See `rename/` and
   `docs/SIDE-BY-SIDE.md`.
@@ -53,7 +54,7 @@ scripts/verify_apk.sh single /path/to/out.apk --profile fingerprints/gboard-18.3
 scripts/verify_apk.sh compare /path/to/stock.apk /path/to/out.apk
 ```
 
-The patcher never signs; re-sign with your own key afterwards (PixelBoard
+The patcher never signs; re-sign with your own key afterwards (upstream
 builds additionally rename the package and bypass signature checks). Building
 `runtime.dex`: `javac` the extension class, then `d8 --min-api 24`
 (`fixtures/build_fixture.sh` shows both steps).
@@ -68,9 +69,9 @@ smali/baksmali/dexlib2 2.5.2 + deps (Maven Central), r8/d8 8.3.37, aapt2
 ## Repository layout
 
 - `extension-src/.../GboardRamblerLiteScriptRuntime.java` - the policy runtime
-  (pure Java, no Android deps; rides PixelBoard's extension carrier).
+  (pure Java, no Android deps; rides the upstream extension carrier).
 - `morphe-patch/` - the Morphe bytecode patch + RuntimeAbi merge snippet for
-  the real PixelBoard tree (compile-reviewed; built through the validated
+  the upstream keyboard tree (compile-reviewed; built through the validated
   standalone route).
 - `standalone-patcher/dex_patch.py` - reproducible local route
   (baksmali -> fingerprint/dataflow-anchored smali insertion -> smali).
@@ -81,7 +82,7 @@ smali/baksmali/dexlib2 2.5.2 + deps (Maven Central), r8/d8 8.3.37, aapt2
 - `tests/` - `run_tests.sh`: 51 policy assertions + 17 end-to-end checks,
   including three fail-closed negative tests.
 - `scripts/verify_apk.sh` - device-free verification of real outputs.
-- `integration/patches-list-entry.json` - PixelBoard patch-list entry.
+- `integration/patches-list-entry.json` - upstream patch-list entry.
 - `docs/` - design, evidence, validation, licensing, and corpus documents.
 - `ledger/` - per-version build provenance records.
 
