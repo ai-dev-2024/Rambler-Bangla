@@ -7,7 +7,7 @@ Romanized Bangla function words that collide with entries in the English word
 set (`ami`, `ta`, `ki`, `e`, `log`, ...) were kept Latin, while English words
 missing from that set (`narrations`, `rambler`, `smoother`, `timestamps`) were
 converted to Bangla script. Every mixed dictation came out scrambled in both
-directions at once (MK's 2026-09-22 diag log, 13 multilingual lines).
+directions at once (the maintainer's 2026-09-22 diag log, 13 multilingual lines).
 
 ## Why segment-level
 
@@ -17,7 +17,7 @@ utterance; Gboard's auto language detection does not support Bengali at all, so
 Rambler's text-layer segmentation is the only route. Users switch at clause and
 sentence boundaries far more than word by word (55% inter-sentential vs 20%
 intra-sentential in the cited code-switching study). Segment-level locking is
-both what the research supports and what MK specified.
+both what the research supports and what the maintainer specified.
 
 ## Design
 
