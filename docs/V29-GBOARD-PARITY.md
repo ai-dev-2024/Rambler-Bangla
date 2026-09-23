@@ -92,14 +92,14 @@ find out which language came out only after a sentence is destroyed.
   (বাং / EN). Reuses the existing classification; no model work. Rig-verifiable
   for the verdict logic; the chip rendering needs a device smoke pass.
 
-### 4. First-enable onboarding / enable screen - PENDING MK'S SCREENSHOT
+### 4. First-enable onboarding / enable screen - PENDING MAINTAINER SCREENSHOT
 
 Gboard: Languages tick list, offline-pack UI, mic-permission flow, "Speak
 now" panel. What this build's k2 first-run currently shows is unverified;
 expected gap: nothing tells the user multilingual dictation exists or how it
 decides.
 
-- Smallest-change path: exact target defined by MK's screenshot. Likely one
+- Smallest-change path: exact target defined by the maintainer's screenshot. Likely one
   settings row + short explainer on the existing extension settings surface,
   plus a verified permission flow.
 - ON-DEVICE VERIFICATION NEEDED: current first-run behavior; the screenshot.
@@ -133,7 +133,7 @@ Documented non-goal for V29.
 - JVM rig (offline, ground truth): everything in the text layer - verdict
   overrides (gap 2), verdict classification for the chip (gap 3 logic), all
   regressions against the v28d suite set.
-- Device (MK installs, we drive via CI smoke where possible): voice locale
+- Device (maintainer installs; CI smoke covers what it can): voice locale
   request (gap 1), bn recognizer reachability (gap 1), offline packs (gap 5),
   first-run onboarding (gap 4), chip rendering (gap 3 visual).
 
