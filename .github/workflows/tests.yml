@@ -1,0 +1,33 @@
+name: Static test suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Use preinstalled Temurin 21
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch pinned toolchain
+        run: |
+          python3 -m pip install --quiet androguard==4.1.4
+          bash scripts/bootstrap_tools.sh
+
+      - name: Run tests
+        run: |
+          source tools/tool-env.sh
+          bash tests/run_tests.sh | tee /tmp/test.log
+          grep -q ", 0 failed" /tmp/test.log
