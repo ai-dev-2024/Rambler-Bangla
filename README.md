@@ -1,5 +1,7 @@
 # Rambler Bangla
 
+[![Static test suite](https://github.com/ai-dev-2024/Rambler-Bangla/actions/workflows/tests.yml/badge.svg)](https://github.com/ai-dev-2024/Rambler-Bangla/actions/workflows/tests.yml)
+
 Rambler Bangla is a fail-closed, fingerprint-guarded patch that stops Gboard
 18.3.1's Rambler / Jetson **Lite** cleanup stage from Romanizing Bengali,
 while preserving every other cleanup behavior. Bengali stays in Bengali
@@ -40,8 +42,9 @@ transliteration is added and no cleanup stage is disabled.
 ## Build and test
 
 ```bash
-export TOOLS_DIR=/path/to/tools          # JDK 21 + smali classpath (see Toolchain)
-source "$TOOLS_DIR/tool-env.sh"
+bash scripts/bootstrap_tools.sh          # fetch pinned toolchain into ./tools
+pip install androguard==4.1.4
+source tools/tool-env.sh
 bash tests/run_tests.sh                  # full suite: expect "17 passed, 0 failed"
 
 # Against a real, user-supplied Gboard 18.3.1 APK:
@@ -64,7 +67,11 @@ builds additionally rename the package and bypass signature checks). Building
 Fetched at build time from public repos (none vendored): Temurin JDK 21,
 smali/baksmali/dexlib2 2.5.2 + deps (Maven Central), r8/d8 8.3.37, aapt2
 8.3.0, apksig 8.3.0, android.jar 4.1.1.4, androguard 4.1.4 (pip).
-`$TOOLS_DIR/tool-env.sh` wires them up.
+`scripts/bootstrap_tools.sh` downloads them into `./tools` (or `$TOOLS_DIR`),
+checks each file against `tools-src/toolchain.sha256`, builds the small
+fixture signer from `tools-src/MiniApkSigner.java`, and writes
+`tools/tool-env.sh`. The same steps run in CI on every push and pull request
+(`.github/workflows/tests.yml`).
 
 ## Repository layout
 
