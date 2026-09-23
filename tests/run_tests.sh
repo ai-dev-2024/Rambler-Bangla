@@ -5,7 +5,8 @@
 # 3. End-to-end patch + wiring check
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-source $HOME/tools/tool-env.sh
+: "${TOOLS_DIR:=./tools}"
+source "$TOOLS_DIR/tool-env.sh"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  PASS: $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
