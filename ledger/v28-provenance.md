@@ -76,7 +76,7 @@ The post-delivery stress battery (85 hand cases + 720 seeded fuzz mixes with
 invariant oracles) found two real defects in the anchor-fixed build: @handles
 converted everywhere (the documented handle protection did not exist in the
 build) and discourse-marker/punctuation boundaries isolated names into
-one-word segments that converted (e.g. Rahim in "Rahim and Karim will
+one-word segments that converted (e.g. Rahim in "Rahim and Uddin will
 come..."). Fixes, both in GboardRamblerSegmentLock.java: (a) @handle spans
 join URLs/emails in the protected-span set; (b) the single-strong-word rule
 now requires zero English-set evidence in the whole utterance; (c) am/pm after
@@ -99,7 +99,7 @@ class) confirmed 11 residual failures in three classes:
 A. "to the <loan>" chain - "The office is next to the bazar." converted the
    entire sentence (function word "to" + one-word English gap "the" + strong
    loan "bazar" formed a locking chain of 2).
-B. Adjacent 2-strong islands - "Rahim Karim joined the call.", "He is my
+B. Adjacent 2-strong islands - "Rahim Uddin joined the call.", "He is my
    choto bhai.", "biye bari", "morog polao": a chain of exactly 2 strong
    words locked regardless of surrounding English density.
 C. Zone-split misfire - "We visited Kali Bari during the festival week.": the
@@ -114,7 +114,7 @@ Fixes (both in GboardRamblerSegmentLock.java):
    word in the chain (ami/ta/ki/na/se/je; "to" and "er" excluded as common in
    plain English prose). A lone strong word still converts only with zero
    English-set words in the whole utterance. "Se office jabe na." still
-   converts; "to the bazar" and "Rahim Karim joined the call." don't.
+   converts; "to the bazar" and "Rahim Uddin joined the call." don't.
 2. Zone-split English->Bangla cut threshold raised from 2 to 3 consecutive
    Bangla-run words (the genuine-switch adversarial case has 3; still splits).
 
