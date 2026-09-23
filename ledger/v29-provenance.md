@@ -1,10 +1,10 @@
 # V29 Provenance - segment-lock hardening + Bangla spelling normalization
 
-Date: 2026-09-23 (AEST). Builder: maintainer. Repo: ai-dev-2024/Rambler-Bangla.
-Status: FIELD ITERATION - V29 is in MK's field test with known open bugs (residual spelling errors, language-switch edge cases). This is a fix-lane build record, not a ship approval or release.
-Authorization: owner approval 2026-09-23,
-after loop review (external design review + engineering review) returned MODIFY-before-build;
-all amendments incorporated in docs/V29-DESIGN.md v2 (amendment map in section 9).
+Date: 2026-09-23 (AEST). Build: automated patch lane. Repo: ai-dev-2024/Rambler-Bangla.
+Status: FIELD ITERATION - V29 is in the maintainer's field test with known open bugs (residual spelling errors, language-switch edge cases). This is a fix-lane build record, not a ship approval or release.
+Authorization: build approved by the maintainer, 2026-09-23, after external design
+review returned modify-before-build; all review amendments incorporated in
+docs/V29-DESIGN.md v2 (amendment map in section 9).
 
 ## Artifacts (FIX-ITERATION / BUILD-ONLY - private field-test artifacts, not a release and not for distribution; signed, v22 key, cert sha256 5ca0623a1f3beb027d3eb87ad0811e97db0ebb8736bd11af0831ab7d6bafbc31)
 - v29-prod.apk    sha256 c277b65e928f728936c3e5722ab7b80dcb1ad67c27616c114a71be4a62085f00  https://gofile.io/d/a0gGjAcA (build-only test link)
@@ -38,11 +38,11 @@ all amendments incorporated in docs/V29-DESIGN.md v2 (amendment map in section 9
   sha256:288e308d8c381eb8d4d6cd1beb9e8ca1c33ef31bff719f50bae5f03c1f298501).
   Annotations: 1 warning + 1 notice (GitHub runner deprecations, non-failing).
   Limitations: emulator smoke covers install + launch + IME enable/inspect only; it does not exercise
-  on-device dictation behavior, which remains MK's field test.
+  on-device dictation behavior, which remains the maintainer's field test.
 
 ## Licenses
 - Avro phonetic canonical autocorrect DB: MPL 2.0 (attribution; source: avrolib.js/avrodict.js in-tree reference only).
-- spelling-corpus-v1.tsv overrides: MK soak 2026-09-23 (his expected spellings win conflicts: install->ইনস্টল over Avro ইন্সটল).
+- spelling-corpus-v1.tsv overrides: maintainer soak 2026-09-23 (maintainer's expected spellings win conflicts: install->ইনস্টল over Avro ইন্সটল).
 - cmudict (BSD, cmusphinx): analysis input for Tier-1b (not shipped in this build).
 - bn_BD.dic (GPLv2): analysis only, never shipped. Enriched autodict fork: no license - excluded.
 
@@ -50,4 +50,4 @@ all amendments incorporated in docs/V29-DESIGN.md v2 (amendment map in section 9
 - Pin UI not in this build: pin machinery rig-tested (EN/BN lanes) but unreachable by the user; AUTO only. V29.1.
 - Host "skip:has-bengali" guard (pre-existing v27/v28 behavior) also binds the BN pin lane; AUTO byte-identical to v28d.
 - "but" stays Latin in Bangla context (discourse-marker isolation, pre-existing design).
-- Acoustic locale routing: excluded from V29 per loop review (experiment only, zero behavior dependency).
+- Acoustic locale routing: excluded from V29 per external design review (experiment only, zero behavior dependency).
