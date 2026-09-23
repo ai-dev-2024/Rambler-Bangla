@@ -5,7 +5,7 @@
 # The fixture contains NO Google content. It proves the patch pipeline.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TOOLS="${TOOLS_DIR:-$HOME/tools}"
+TOOLS="${TOOLS_DIR:-./tools}"
 export JAVA_HOME="${JAVA_HOME:-$(ls -d "$TOOLS"/jdk-21* 2>/dev/null || true)}"
 [ -n "$JAVA_HOME" ] && export PATH="$JAVA_HOME/bin:$PATH"
 if [ -z "${SMALI_CP:-}" ]; then
