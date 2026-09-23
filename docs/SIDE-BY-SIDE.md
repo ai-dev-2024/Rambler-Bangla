@@ -62,7 +62,7 @@ python3 rename/rename_apk.py \
   --new-label "Rambler Bangla" \
   --workdir /tmp/rename-work --smali-cp "$SMALI_CP" \
   --report rename-report.json
-# then sign with your own key (v2; see tools/src/MiniApkSigner.java)
+# then sign with your own key (v2; see tools-src/MiniApkSigner.java)
 ```
 
 Never distribute the stock Google/PixelBoard APK or upstream signing
