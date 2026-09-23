@@ -1,98 +1,47 @@
 # Rambler Bangla
 
+Rambler Bangla is a fail-closed, fingerprint-guarded patch that stops Gboard
+18.3.1's Rambler / Jetson **Lite** cleanup stage from Romanizing Bengali,
+while preserving every other cleanup behavior. Bengali stays in Bengali
+Unicode for `bn-BD`, `bn-IN` and `bn-Beng`; Romanization happens only for an
+explicit Latin variant (`bn-Latn`); English always stays Latin. No
+transliteration is added and no cleanup stage is disabled.
 
-## Rambler Bangla side-by-side build
+## Features
 
-The experimental test APK is rebuilt under its own package identity:
-**Rambler Bangla** (`com.aidev2024.ramblerbangla`). It can install alongside
-PixelBoard instead of being treated as an update signed by a different key.
+- **Script gate**: two runtime hooks replace the injected "Hinglish Override"
+  rule and rewrite only the Romanization bullet of the cleanup prompt's
+  SCRIPT GATE, driven by the enabled-language list. Fail-closed: any
+  fingerprint, signature, or dataflow miss aborts with no output.
+- **Segment-locked multilingual dictation (V28)**: each dictated segment is
+  classified once (Bangla vs English) and rendered entirely in that language,
+  replacing the per-word convert/keep that scrambled mixed dictation.
+- **Bangla spelling normalization (V29, in development)**: garble-resistant
+  English near-match demotion plus a 2,265-pair canonical roman-to-script
+  table, applied only inside locked Bangla segments.
+- **Side-by-side install**: the test build ships under its own package
+  identity (`com.aidev2024.ramblerbangla`) and installs alongside PixelBoard.
+  The repository contains the rename tooling and audit documentation, but no
+  APK, generated DEX, key, or other proprietary binary. See `rename/` and
+  `docs/SIDE-BY-SIDE.md`.
+- **Source only**: this repository distributes no APKs.
 
-The packaging step rewrites the manifest package, all 11 provider authorities,
-declared permissions, phenotype and deep-link references, referenced binary
-XML resources, the `resources.arsc` package field, and exact identity strings
-in `classes.dex`. It then repacks with the alignment Android requires and is
-signed with a dedicated experimental key. The repository contains the rename
-tooling and audit documentation, but no APK, generated DEX, key, or other
-proprietary binary. See `rename/` and `docs/SIDE-BY-SIDE.md`.
+## Project status
 
+- **V29 (2026-09-23): field iteration, in development.** Not a stable
+  release: this cycle's field reports documented open bugs (residual
+  spelling errors, language-switch edge cases) and iteration is continuing
+  in the open. Design: `docs/V29-DESIGN.md`. Acceptance fixtures:
+  `docs/V29-FIXTURES.md`. Build record: `ledger/v29-provenance.md`.
+- **v28d: last stable baseline.** Evidence and status detail:
+  `docs/EVIDENCE.md`, `docs/V28-SEGMENT-LOCK.md`, `ledger/v28-provenance.md`.
 
-Rambler Bangla is a fail-closed, fingerprint-guarded patch that stops Gboard 18.3.1's Rambler /
-Jetson **Lite** cleanup stage from Romanizing Bengali, while preserving every
-other cleanup behavior. Bengali stays in Bengali Unicode for `bn-BD`, `bn-IN`
-and `bn-Beng`; Romanization happens only for an explicit Latin variant
-(`bn-Latn`); English always stays Latin. No transliteration is added and no
-cleanup stage is disabled.
-
-Public source: https://github.com/ai-dev-2024/Rambler-Bangla
-
-The Android test build uses the display name **Rambler Bangla** and a distinct
-application ID so it can be installed alongside PixelBoard. The application-ID
-rewrite is part of the packaging step; the `com.akshaykadam.pixelboard` names
-under `morphe-patch/` and `extension-src/` are upstream integration namespaces
-and remain unchanged for source compatibility and clear attribution.
-
-## Evidence basis (static, verified)
-
-From the analysis of the PixelBoard 18.3.1 artifact (APK SHA-256
-`e229d982ff65b24d71aeee804dcce6863e902ec409a0379ca3deaef17e30f6bd`):
-
-| Anchor | Where | Fingerprint (SHA-256) |
-|---|---|---|
-| 289-byte "Hinglish Override" rule, unconditionally injected for any Indian-language+English mix, naming Bengali/Banglish | `classes3.dex`, `Lkfd;->d(Lhrl;Ljava/lang/String;ILqqi;Laebb;Ljava/lang/String;Laugd;Ljava/util/concurrent/atomic/AtomicBoolean;)V` | `a024513458b73f915c78438cea2a9457b9c5aed28da3644030c3dc76cd0ac6e9` |
-| 17,802-byte Lite cleanup prompt, "SCRIPT GATE" Branch A mandates Indic->ASCII Romanization on a Latin keyboard | `classes3.dex`, `Lkew;->b(Ljava/lang/Object;)V` | `347a9484392763d5fb16660bc3ca9bbceb1851c96f2024f96c1e9327f504696e` |
-
-The same 289-byte rule exists unchanged in the stock input APK: the behavior
-is inherited from Gboard, not introduced by PixelBoard. This evidence covers
-the **Lite (local cleanup) path only**; remote Rambler Base/S policy cannot be
-established statically (see docs/VALIDATION.md).
-
-## Design
-
-Two runtime hooks in `kfd.d`, driven by the enabled-language data that already
-flows through the method (`{ENABLED_LANGUAGES}`, joined from the
-enabled-language collection):
-
-1. `selectHinglishOverrideRule(stockRule, enabledLanguages)` replaces the
-   `{HINGLISH_OVERRIDE_RULE}` substitution value:
-   native Indic tag present -> native-script preservation rule;
-   only explicit `-Latn` Indic tags -> stock rule;
-   no Indic tags -> rule dropped (it is a no-op anyway);
-   unknown/blank -> stock rule (fail-safe).
-2. `rewriteCleanupPromptScriptGate(prompt, enabledLanguages)` rewrites only
-   the Branch A Romanization bullet of the SCRIPT GATE, only under a native
-   Indic policy, and only when the expected stock block is present verbatim;
-   everything else in the prompt stays byte-identical.
-
-Fail-closed gates: exact method signatures, both string fingerprints
-(whole-APK sweep), resolvable `{ENABLED_LANGUAGES}` replace-site dataflow,
-anchor-order check, already-patched check. Any miss aborts with no output.
-
-## Layout
-
-- `extension-src/.../GboardRamblerLiteScriptRuntime.java` - the policy runtime
-  (pure Java, no Android deps; rides PixelBoard's extension carrier).
-- `morphe-patch/` - the Morphe bytecode patch + RuntimeAbi merge snippet for
-  the real PixelBoard tree. NOTE: the credentialed Morphe Gradle plugin could
-  not be resolved in the offline environment, so this source is delivered
-  compile-reviewed but built through the validated standalone route below.
-- `standalone-patcher/dex_patch.py` - reproducible local route
-  (baksmali -> fingerprint/dataflow-anchored smali insertion -> smali).
-  `analyze` prints every anchor/register it resolves; `patch` is fail-closed.
-- `fingerprints/gboard-18.3.1.json` - the fail-closed profile (documented
-  hashes; no Google strings reproduced).
-- `fixtures/` - self-built synthetic APK (zero Google content) that mirrors
-  the anchors; proves the whole pipeline including d8, aapt2, v2 signing.
-- `tests/` - `run_tests.sh`: 51 policy assertions + 17 end-to-end checks,
-  including three fail-closed negative tests.
-- `scripts/verify_apk.sh` - device-free verification of real outputs
-  (package/version/signature/decode + fingerprint anchors).
-- `integration/patches-list-entry.json` - PixelBoard patch-list entry.
-
-## Quickstart
+## Build and test
 
 ```bash
-source $HOME/tools/tool-env.sh     # JDK 21 + smali classpath (see below)
-bash tests/run_tests.sh                    # full suite: expect "17 passed, 0 failed"
+export TOOLS_DIR=/path/to/tools          # JDK 21 + smali classpath (see Toolchain)
+source "$TOOLS_DIR/tool-env.sh"
+bash tests/run_tests.sh                  # full suite: expect "17 passed, 0 failed"
 
 # Against a real, user-supplied Gboard 18.3.1 APK:
 python3 standalone-patcher/dex_patch.py analyze \
@@ -114,44 +63,32 @@ builds additionally rename the package and bypass signature checks). Building
 Fetched at build time from public repos (none vendored): Temurin JDK 21,
 smali/baksmali/dexlib2 2.5.2 + deps (Maven Central), r8/d8 8.3.37, aapt2
 8.3.0, apksig 8.3.0, android.jar 4.1.1.4, androguard 4.1.4 (pip).
-`$HOME/tools/tool-env.sh` wires them up.
+`$TOOLS_DIR/tool-env.sh` wires them up.
 
-## Limits
+## Repository layout
 
-- The one thing static work cannot finish is on-device confirmation for the
-  real kfd.d register map and for Base/S. `analyze` resolves the register map
-  on the real APK at patch time; the S23 Ultra behavior matrix is in
-  docs/VALIDATION.md.
-- The zh-TW-analog locale-admission hook (`admitExactBengaliLocales`) is
-  hypothesis-stage and OFF by default; Bengali is absent from Google's
-  official Rambler tuned-language list, so remote Base/S may Romanize
-  regardless of any client patch.
+- `extension-src/.../GboardRamblerLiteScriptRuntime.java` - the policy runtime
+  (pure Java, no Android deps; rides PixelBoard's extension carrier).
+- `morphe-patch/` - the Morphe bytecode patch + RuntimeAbi merge snippet for
+  the real PixelBoard tree (compile-reviewed; built through the validated
+  standalone route).
+- `standalone-patcher/dex_patch.py` - reproducible local route
+  (baksmali -> fingerprint/dataflow-anchored smali insertion -> smali).
+- `fingerprints/gboard-18.3.1.json` - the fail-closed profile (documented
+  hashes; no Google strings reproduced).
+- `fixtures/` - self-built synthetic APK (zero Google content) that mirrors
+  the anchors; proves the whole pipeline including d8, aapt2, v2 signing.
+- `tests/` - `run_tests.sh`: 51 policy assertions + 17 end-to-end checks,
+  including three fail-closed negative tests.
+- `scripts/verify_apk.sh` - device-free verification of real outputs.
+- `integration/patches-list-entry.json` - PixelBoard patch-list entry.
+- `docs/` - design, evidence, validation, licensing, and corpus documents.
+- `ledger/` - per-version build provenance records.
 
-## V28 status (2026-09-23)
+## Credits and license
 
-The multilingual voice path is now segment-locked: each dictated segment is
-classified once (Bangla vs English) and rendered entirely in that language,
-replacing the per-word convert/keep that scrambled mixed dictation in V27.11.
-Design and test evidence: docs/V28-SEGMENT-LOCK.md. Build record:
-ledger/v28-provenance.md. The k1 (full Bangla) and k3 (en-US) layouts and the
-typing path are unchanged (byte-verified against the V27.11 log corpus). An
-extended stress battery (85 hand cases + 720 seeded fuzz mixes against the
-exact signed bytes) passed after two more targeted fixes (@handle protection;
-names isolated by punctuation boundaries). A reverse-direction leak battery
-(39 cases, built from a field report of English dictation rendering as
-Bengali) then caught three residual classes and the weight rule + zone-split
-threshold fixes closed all 39. v28d remains the last stable baseline (superseded in field testing by V29, below): production SHA-256
-5889214e492541fa6024f03e023ae471e55f7d300395d0027235d81a7ef85362, staging
-SHA-256 e88511d2f7b7e28dfcbf1d21cb1f37db096cc5bc435d3afe3a1d9cbe735b9631,
-CI smoke green on the exact bytes - see the ledger.
-
-## V29 status (2026-09-23, in development)
-
-V29 is the current field-iteration build on the fix lane: A2 garble-ASR
-demotion plus Tier-1 Bangla spelling normalization on top of the V28 segment
-lock. It is NOT a stable release: this cycle's field reports documented open
-bugs (residual spelling errors, language-switch edge cases) and iteration is
-continuing in the open. Design: docs/V29-DESIGN.md. Acceptance fixtures:
-docs/V29-FIXTURES.md. Build record and rig/CI evidence:
-ledger/v29-provenance.md. Test APKs are shared privately with the project
-owner only; this repository distributes source, not APKs.
+Derivative of **PixelBoard** by Akshay Kadam (GPL v3.0); built with the
+Morphe patch engine and smali/baksmali (JesusFreke, BSD). V29 normalization
+data derives from the Avro Keyboard phonetic dictionary (MPL 2.0). Full
+notices: `ATTRIBUTION.md`. This repository is licensed GNU GPL v3.0 (see
+`LICENSE`) and contains no Google binaries, keys, or model files.
