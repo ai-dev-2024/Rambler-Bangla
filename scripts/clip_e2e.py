@@ -151,6 +151,27 @@ def open_field():
     return None
 
 
+def open_clipboard(field):
+    tap(field["cx"], field["cy"])
+    time.sleep(1.0)
+    ns = ime_nodes()
+    if not ns:
+        fail(2, "IME window not visible in UI dump")
+    if find(ns, r"^hide clipboard$", pkg=PKG):
+        return ns
+    clip = find(ns, r"^clipboard$", pkg=PKG)
+    if not clip:
+        more = find(ns, r"open features menu", pkg=PKG)
+        if more:
+            tap(more["cx"], more["cy"])
+            ns = ime_nodes()
+            clip = find(ns, r"^clipboard$", pkg=PKG)
+    if not clip:
+        fail(2, "clipboard entry point not found")
+    tap(clip["cx"], clip["cy"])
+    return ime_nodes()
+
+
 def main():
     ime = sh("adb shell ime list -a -s | tr -d '\\r' | grep -m1 '^%s/'" % PKG).strip()
     if not ime:
@@ -161,6 +182,16 @@ def main():
     field = open_field()
     if not field:
         fail(2, "no text field found")
+    # Clipboard must be on before copying, or copies are not saved.
+    ns = open_clipboard(field)
+    on = find(ns, r"^turn on clipboard$", fields=("text",), pkg=PKG) or find(ns, r"turn on clipboard", pkg=PKG)
+    if on:
+        tap(on["cx"], on["cy"])
+        RESULTS["clipboard_enabled_by_driver"] = True
+        ns = ime_nodes()
+    hide = find(ns, r"^hide clipboard$", pkg=PKG)
+    if hide:
+        tap(hide["cx"], hide["cy"])
     # Seed clips: type, select-all, cut (hardware key combos reach the focused field).
     for c in CLIPS:
         adb("shell input text " + c)
@@ -168,31 +199,11 @@ def main():
         adb("shell input keycombination 113 29")  # ctrl+A
         time.sleep(0.4)
         adb("shell input keycombination 113 52")  # ctrl+X
-        time.sleep(1.2)
+        time.sleep(1.5)
     snap("after-seed")
-    tap(field["cx"], field["cy"])
-    time.sleep(1.5)
-    ns = ime_nodes()
-    log("ime nodes", len(ns), [ (n["text"], n["desc"]) for n in ns if n["text"] or n["desc"] ][:60])
-    if not ns:
-        fail(2, "IME window not visible in UI dump")
-    # Open clipboard: direct access point, else overflow menu first.
-    clip = find(ns, r"^clipboard", pkg=PKG)
-    if not clip:
-        more = find(ns, r"more|open features|menu", pkg=PKG)
-        if more:
-            tap(more["cx"], more["cy"])
-            ns = ime_nodes()
-            clip = find(ns, r"clipboard", pkg=PKG)
-    if not clip:
-        fail(2, "clipboard entry point not found")
-    tap(clip["cx"], clip["cy"])
-    ns = ime_nodes()
-    on = find(ns, r"turn on", pkg=PKG)
-    if on:
-        tap(on["cx"], on["cy"])
-        RESULTS["clipboard_was_off"] = True
-        fail(2, "clipboard was off; clips seeded before enable are not captured (rerun ordering)")
+    ns = open_clipboard(field)
+    if find(ns, r"turn on clipboard", pkg=PKG):
+        fail(2, "clipboard still off after enabling")
     for c in CLIPS:
         if not find(ns, "^" + c + "$", pkg=PKG):
             log("clip missing", c)
@@ -241,16 +252,7 @@ def main():
     # Check 3: persistence across close/reopen.
     adb("shell input keyevent 4")
     time.sleep(1.5)
-    tap(field["cx"], field["cy"])
-    ns = ime_nodes()
-    clip = find(ns, r"^clipboard", pkg=PKG)
-    if not clip:
-        more = find(ns, r"more|open features|menu", pkg=PKG)
-        if more:
-            tap(more["cx"], more["cy"])
-            clip = find(ime_nodes(), r"clipboard", pkg=PKG)
-    if clip:
-        tap(clip["cx"], clip["cy"])
+    open_clipboard(field)
     again = pinned_order()
     RESULTS["pinned_order_after_reopen"] = again
     if again != new:
@@ -261,7 +263,9 @@ def main():
 
 def pinned_order(ns=None):
     ns = ns if ns is not None else ime_nodes()
-    hits = [n for n in ns if n["pkg"] == PKG and n["text"] in CLIPS]
+    hits = [n for n in ns if n["pkg"] == PKG and (n["text"] in CLIPS or n["desc"] in CLIPS)]
+    for n in hits:
+        n["text"] = n["text"] if n["text"] in CLIPS else n["desc"]
     # Staggered grid: reading order = row (top) then column (left).
     hits.sort(key=lambda n: (n["b"][1] // 40, n["b"][0]))
     seen = []
