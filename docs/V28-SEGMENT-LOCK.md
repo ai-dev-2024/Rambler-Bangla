@@ -48,11 +48,11 @@ typing path run V27.11 code unchanged.
    are excluded because they are common in plain English prose). This kills
    two reverse-leak classes: function-word bridges into a lone loan ("The
    office is next to the bazar.") and adjacent 2-strong name/island pairs
-   ("Rahim Karim joined the call.", "He is my choto bhai."). A single strong
+   ("Rahim Uddin joined the call.", "He is my choto bhai."). A single strong
    word only converts when no English-set word appears anywhere in the
    utterance - sentence punctuation and lowercase discourse markers split
    segments, and a name isolated into its own one-word segment ("Rahim and
-   Karim will come to the office tomorrow.") would otherwise convert because
+   Uddin will come to the office tomorrow.") would otherwise convert because
    the tiny segment alone contains no English. This is the brief's "a run of
    2+ words flips; a single weak word does not".
 5. **Protected spans**: URLs, emails, @handles, and digit-suffixed am/pm times
@@ -152,7 +152,7 @@ invariant-oracle checked). Two real defects surfaced and were fixed:
 1. **@handle conversion** - `@ramblerdev` converted to phonetic Bengali in all
    positions (the `@` is a segment boundary, isolating the handle into a
    one-word segment). Handles are now protected spans like URLs/emails.
-2. **Isolated-entity conversion** - `Rahim and Karim will come to the office
+2. **Isolated-entity conversion** - `Rahim and Uddin will come to the office
    tomorrow.` converted `Rahim` (discourse-marker boundary at `and` isolated
    it; the one-word segment trivially had no English). The single-strong-word
    rule now requires zero English-set evidence in the whole utterance, not just
