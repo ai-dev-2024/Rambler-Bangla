@@ -13,7 +13,7 @@ v1 superseded; changes from v1 are marked [REVIEW] and mapped to the originating
 
 ## 2. Architecture (minimum-safe set from engineering review B, adopted in full)
 
-Single choke point: the voice hook (vrh.h) replaces result text with processVoice(text). ALL conversion flows through processVoice; there is no second converter path. V29 components, in call order:
+Single choke point: the host voice-result hook replaces result text via GboardRamblerScriptFix.process(String, Locale). ALL conversion flows through process/processInternal; there is no second converter path. (Shipped-prod call sites: kcm.smali:8802/8806; the vrh.h / processVoice naming dates from the design-phase build - obfuscated class names differ per build.) V29 components, in call order:
 
 1. VoiceSessionContext - holds the session pin (AUTO/BN/EN), session nonce, lifecycle state. Deterministic destruction (section 4).
 2. LocaleRouter - reads the pin ONLY. Never infers a route from first token, script, subtype, or lexical score. Weak/missing/conflicting session metadata = AUTO = v28d byte-identical behavior. [REVIEW]
@@ -39,7 +39,7 @@ Single choke point: the voice hook (vrh.h) replaces result text with processVoic
 
 ## 5. Fix package B: Bangla spelling normalization (headline feature)
 
-- Tier-1a: canonical roman->script lookup (2,369 pairs, Avro-derived, MPL 2.0) consulted BEFORE the converter, ONLY in normalization lanes (BN pin or BN-locked AUTO segment), ONLY outside protected spans, ONLY on Latin tokens, NEVER on Bangla script. Measured on the shipped jar: 17.1% -> 82.9% byte-exact on covered alpha keys.
+- Tier-1a: canonical roman->script lookup (2,265 pairs shipped: 2,247 Avro-derived plus maintainer field-corpus additions/overrides, MPL 2.0; total verified on the shipped build 2026-09-23) consulted BEFORE the converter, ONLY in normalization lanes (BN pin or BN-locked AUTO segment), ONLY outside protected spans, ONLY on Latin tokens, NEVER on Bangla script. Measured on the shipped jar: 17.1% -> 82.9% byte-exact on covered alpha keys.
 - Tier-1b: cmudict-derived (BSD) English loan spellings for uncovered high-frequency loans (732 uncovered top-1k words identified). Each shipped mapping carries provenance (source + derivation) and a regression fixture. [REVIEW]
 - Tier-2: fallback chain seed -> Avro parse -> engine converter + permissive wordlist validation (native roundtrip union 44.9% baseline).
 - Corpus: spelling-corpus-v1.tsv (52 entries) grows toward ~500 with government standard-spelling derivations. Every shipped pair byte-checked on the rig. No runtime model judgment.
@@ -65,7 +65,7 @@ Single choke point: the voice hook (vrh.h) replaces result text with processVoic
 Q: Confirm bypass/convert gates occur BEFORE Tier-1 lookup and every converter path, proven with byte-exact passthrough tests (punctuation, apostrophes, emoji, handles, URLs, mixed scripts, whitespace).
 
 A: YES, by construction and by proof:
-1. Single choke point: the prod hook (vrh.h) replaces result item text with processVoice(c); archaeology of the shipped dex shows every voice text path converges there (callers kfo:814 / vxr:736 / vzz:318 all route through the same replacement). There is no alternate converter path to leak past the gate.
+1. Single choke point: in the shipped prod dex the host voice handler (kcm.smali:8802/8806) calls GboardRamblerScriptFix.process(String, Locale) @4526 -> processInternal @4574 (gates: voice-k3, closed-typing, has-bengali @4739, dict-fail @4753) -> SegmentLock.process @4801; every voice text path converges there. processVoice @6259 exists as an internal wrapper but has no external callers in the prod dex; the vrh.h / kfo:814 / vxr:736 / vzz:318 names came from the design-phase build and those classes do not exist under those names in shipped prod. There is no alternate converter path to leak past the gate.
 2. Gate order inside processVoice (V29): (a) VoiceSessionContext/LocaleRouter resolve the lane FIRST; (b) EN pin returns the original string immediately - before ProtectedSpan, before Tier-1 lookup, before SegmentLock, before convertLoan; (c) k3 layout gate (v28d, retained) likewise returns original before any V29 component; (d) Tier-1 lookup exists only inside the BN conversion path, after the lane decision and after protected spans are cut.
 3. Proof battery (new rig suite, v29-passthrough): under EN pin, byte-exact passthrough required for: punctuation-heavy text, apostrophes/contractions, emoji and emoji-mixed text, @handles, URLs, mixed Bengali+Latin script, leading/trailing/internal whitespace variants, numbers/dates/times, ALLCAPS, empty and single-char inputs. Same suite run under k3 AUTO. Any byte difference = build fails.
 4. Parity proof: AUTO with absent/low/conflicting session metadata runs the full v28d regression corpus and must match v28d output byte-for-byte except the named A2 fixtures.
