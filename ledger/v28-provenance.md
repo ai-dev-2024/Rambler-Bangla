@@ -91,7 +91,7 @@ is superseded and must not be distributed. Final SHAs above supersede it.
 
 ## Amendment 3: reverse-leak respin - v28d (2026-09-23)
 
-Field report from the tester (MK): on the Amendment-2 build, English dictation
+Field report from the maintainer: on the Amendment-2 build, English dictation
 occasionally produced Bengali renderings of English words (reverse-direction
 leak). A dedicated reverse battery (39 hand cases built around the symptom
 class) confirmed 11 residual failures in three classes:
