@@ -227,15 +227,20 @@ def main():
     RESULTS["hold_still_menu"] = menu
     if not menu:
         fail(1, "hold-still did not show stock menu")
-    adb("shell input keyevent 4")  # back dismisses popup
-    time.sleep(1)
+    # Dismiss the stock menu by tapping its scrim away from the menu items
+    # (the Back key would close the whole keyboard).
+    ns = ime_nodes()
+    scrim = find(ns, r"hide detailed information", pkg=PKG)
+    if scrim:
+        tap(scrim["b"][0] + 200, scrim["b"][3] - 150)
     if find(ime_nodes(), r"^(unpin|delete)$", pkg=PKG):
-        n0 = find(ime_nodes(), "^" + order[0] + "$", pkg=PKG)
-        tap(n0["cx"], n0["b"][1] + 2)
+        fail(2, "could not dismiss stock menu after hold-still")
     # Check 2: hold then move first pinned clip onto the last pinned clip.
     ns = ime_nodes()
     a = find(ns, "^" + order[0] + "$", pkg=PKG)
     z = find(ns, "^" + order[-1] + "$", pkg=PKG)
+    if not a or not z:
+        fail(2, "pinned clips not visible before drag")
     hold(a["cx"], a["cy"], 0.9, to=(z["cx"], z["cy"] + 5), steps=12)
     ns = ime_nodes()
     RESULTS["menu_after_drag"] = bool(find(ns, r"^(unpin|delete)$", pkg=PKG))
