@@ -1,0 +1,155 @@
+name: Device round (test branch)
+
+# Runs only on a push to this test branch. No dispatch inputs, no pull_request trigger.
+# Job colour is NOT a test verdict: jobs turn red only for infrastructure failures (gate, fetch/hash check,
+# emulator start, encryption). Test verdicts exist only inside the encrypted evidence.
+on:
+  push:
+    branches:
+      - test/device-round
+
+permissions:
+  contents: read
+
+concurrency:
+  group: device-round
+  cancel-in-progress: false
+
+env:
+  PACKAGE_NAME: com.aidev2024.ramblerbangla
+  APK_PATH: ${{ github.workspace }}/under-test.apk
+  BASE_APK_PATH: ${{ github.workspace }}/previous.apk
+
+jobs:
+  gate:
+    # Cheap check so the emulator jobs are skipped cleanly (not failed) when the private inputs are not configured.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          A: ${{ secrets.ROUND_DRIVE_TOKEN }}
+          B: ${{ secrets.ROUND_APK_PARTS }}
+          C: ${{ secrets.ROUND_BASE_PARTS }}
+          D: ${{ secrets.ROUND_APK_SHA256 }}
+          E: ${{ secrets.ROUND_BASE_SHA256 }}
+          F: ${{ secrets.ROUND_EXPECT_PRIVATE }}
+          G: ${{ secrets.ROUND_AGE_RECIPIENT }}
+        shell: bash
+        run: |
+          if [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ] && [ -n "$D" ] && [ -n "$E" ] && [ -n "$F" ] && [ -n "$G" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::private inputs not configured; emulator jobs skipped"
+          fi
+
+  round:
+    needs: gate
+    if: needs.gate.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        phase: [fresh, matrix, update, voice, lanes, clip]
+    steps:
+      - name: Check out test driver
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Fetch APKs from the private source (fails closed)
+        env:
+          TOKEN: ${{ secrets.ROUND_DRIVE_TOKEN }}
+          APK_PARTS: ${{ secrets.ROUND_APK_PARTS }}
+          BASE_PARTS: ${{ secrets.ROUND_BASE_PARTS }}
+          EXPECTED_SHA256: ${{ secrets.ROUND_APK_SHA256 }}
+          BASE_SHA256: ${{ secrets.ROUND_BASE_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fixed fetch path: read-only Drive file download by id, with a bearer token.
+          # Secret values are only ever used as data (ids are checked against a strict pattern), never run as shell.
+          fetch() {
+            local out="$1" parts="$2" id n=0 tmp
+            : > "$out"
+            for id in $parts; do
+              [[ "$id" =~ ^[A-Za-z0-9_-]{20,80}$ ]] || { echo "::error::bad part id format"; exit 1; }
+              n=$((n+1)); [ "$n" -le 16 ] || { echo "::error::too many parts"; exit 1; }
+              tmp="$(mktemp)"
+              # each part goes to its own temp file; it is appended only after a complete successful download
+              curl -sS --fail --proto =https --max-redirs 3 --retry 3 --connect-timeout 30 --max-time 300 \
+                -H @<(printf 'Authorization: Bearer %s\n' "$TOKEN") \
+                -o "$tmp" "https://www.googleapis.com/drive/v3/files/${id}?alt=media" 2>/dev/null \
+                || { rm -f "$tmp"; echo "::error::private fetch failed"; exit 1; }
+              cat "$tmp" >> "$out"; rm -f "$tmp"
+            done
+            [ "$n" -ge 1 ] || { echo "::error::no parts"; exit 1; }
+          }
+          fetch "$APK_PATH" "$APK_PARTS"
+          fetch "$BASE_APK_PATH" "$BASE_PARTS"
+          echo "$EXPECTED_SHA256  $APK_PATH" | sha256sum --check --strict --status || { echo "::error::APK bytes do not match the pinned value"; exit 1; }
+          echo "$BASE_SHA256  $BASE_APK_PATH" | sha256sum --check --strict --status || { echo "::error::previous APK bytes do not match the pinned value"; exit 1; }
+          echo "APK bytes verified"
+
+      - name: Build empty-field test app
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "HARNESS_APK=$(bash harness/build.sh | tail -1)" >> "$GITHUB_ENV"
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Emulator phase
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          EXPECTED_SHA256: ${{ secrets.ROUND_APK_SHA256 }}
+          BASE_SHA256: ${{ secrets.ROUND_BASE_SHA256 }}
+          ROUND_EXPECT_PRIVATE: ${{ secrets.ROUND_EXPECT_PRIVATE }}
+        with:
+          api-level: 35
+          # same emulator build as the earlier test-branch run that installed and ran the arm64-only APK on this image
+          emulator-build: 15917651
+          arch: x86_64
+          target: google_apis
+          profile: pixel_5
+          emulator-options: -no-snapshot-load -no-snapshot-save -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            adb wait-for-device
+            adb shell cmd clipboard clear >/dev/null 2>&1 || true
+            mkdir -p round-artifacts
+            python3 scripts/device_round.py ${{ matrix.phase }} > round-artifacts/driver-stdout-stderr.txt 2>&1 || echo "driver_exit=$?" > round-artifacts/driver-exit.txt
+
+      - name: Encrypt evidence
+        if: always()
+        env:
+          AGE_RECIPIENT: ${{ secrets.ROUND_AGE_RECIPIENT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$APK_PATH" "$BASE_APK_PATH"
+          test -n "$AGE_RECIPIENT"
+          sudo apt-get update -qq >/dev/null 2>&1; sudo apt-get install -y -qq age >/dev/null 2>&1
+          command -v age >/dev/null
+          dirs=(); for d in round-artifacts clip-artifacts; do [ -d "$d" ] && dirs+=("$d"); done
+          [ "${#dirs[@]}" -gt 0 ] || exit 0
+          tar czf - "${dirs[@]}" | age -r "$AGE_RECIPIENT" -o evidence.age
+          rm -rf "${dirs[@]}"
+
+      - name: Upload encrypted evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-${{ matrix.phase }}
+          path: evidence.age
+          if-no-files-found: ignore
+          retention-days: 1
