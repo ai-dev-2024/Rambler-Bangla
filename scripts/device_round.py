@@ -19,6 +19,16 @@ c.OUT = os.path.join("round-artifacts", PHASE); os.makedirs(c.OUT, exist_ok=True
 def quiet_log(*a):
     with open(os.path.join(c.OUT, "driver.log"), "a") as f: f.write(" ".join(str(x) for x in a) + "\n")
 c.log = quiet_log
+# rev19: the imported clip_e2e helpers must never reach its fail()/finish(): those print results and app debug lines to the
+# public job log and overwrite its results.json/logcat.txt. Both are replaced module-wide with a private raise; fail() and
+# open_clipboard() resolve these names from the module at call time, so every path goes through the replacements.
+# (The separate D1 clip phase runs clip_e2e.py as its own process and is unaffected.)
+class ClipUIError(Exception): pass
+def _private_fail(code, why):
+    quiet_log("clip helper fail (private)", code, why); raise ClipUIError("%s: %s" % (code, why))
+def _private_finish(code):
+    quiet_log("clip helper finish blocked (private)", code); raise ClipUIError("finish(%s)" % code)
+c.fail = _private_fail; c.finish = _private_finish
 PKG = c.PKG
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXP = json.load(open(os.path.join(HERE, "device_round_expected.json")))
@@ -436,7 +446,134 @@ def cert_digests(path):
     rc, out, err = run_fast([tools[-1], "verify", "--print-certs", path], 120)
     return sorted(set(re.findall(r"certificate SHA-256 digest: ([0-9a-f]{64})", out))) if rc == 0 else []
 
+# ---- rev17: pinned clips + personal dictionary, seeded through the previous build's UI ----
+KEEP_CLIPS = ["keeppinone", "keeppintwo"]
+KEEP_WORD = "rmblkeepword"
+
+def _clip_nodes(ns): return [n for n in ns if n["pkg"] == PKG and (n["text"] in KEEP_CLIPS or n["desc"] in KEEP_CLIPS)]
+
+def pinned_state(tag):
+    """Opens the keyboard clipboard in a text field; for each keep clip: visible, and its long-press menu offers Unpin (= pinned).
+    Returns dict(clipboard_on, clips={clip: {"seen", "pinned"}}) or None if the UI could not be driven."""
+    try:
+        field = c.open_field()
+        if not field: return None
+        ns = c.open_clipboard(field)
+        out = dict(clipboard_on=not bool(c.find(ns, r"turn on clipboard", pkg=PKG)), clips={})
+        for k in KEEP_CLIPS:
+            n = c.find(c.ime_nodes(), "^" + k + "$", pkg=PKG)
+            st = dict(seen=bool(n), pinned=False)
+            if n:
+                c.hold(n["cx"], n["cy"], 1.2)
+                menu = c.ime_nodes()
+                st["pinned"] = bool(c.find(menu, r"^unpin$", pkg=PKG)) and not bool(c.find(menu, r"^pin$", pkg=PKG))
+                adb("shell input keyevent KEYCODE_BACK"); time.sleep(1)
+                c.open_clipboard(field)
+            out["clips"][k] = st
+        save("clip-state-%s.json" % tag, out)
+        return out
+    except (ClipUIError, SystemExit):
+        return None
+
+def field_value():
+    """Text of the focused editable field outside the keyboard (the Contacts form field), or None if none is focused."""
+    ns = snap("clip-field")
+    f = [n for n in ns if n["pkg"] != PKG and n["cls"].endswith("EditText") and n["focused"]]
+    return f[0]["text"] if f else None
+
+def seed_clips():
+    """Clipboard on, copy the keep clips, pin each through the stock long-press menu (previous build's UI)."""
+    try:
+        field = c.open_field()
+        if not field: return None
+        ns = c.open_clipboard(field)
+        on = c.find(ns, r"turn on clipboard", pkg=PKG)
+        if on: c.tap(on["cx"], on["cy"]); ns = c.ime_nodes()
+        hide = c.find(ns, r"^hide clipboard$", pkg=PKG)
+        if hide: c.tap(hide["cx"], hide["cy"])
+        steps = {}
+        for k in KEEP_CLIPS:
+            adb("shell input text " + k); time.sleep(0.8)
+            typed = field_value()
+            adb("shell input keycombination 113 29"); time.sleep(0.4)   # Ctrl+A select all
+            adb("shell input keycombination 113 31"); time.sleep(1.5)   # Ctrl+C copy
+            adb("shell input keycombination 113 29"); time.sleep(0.4)   # clear the field before the next clip
+            adb("shell input keyevent KEYCODE_DEL"); time.sleep(0.8)
+            cleared = field_value()
+            steps[k] = dict(typed=typed, typed_ok=typed == k, cleared=cleared, cleared_ok=cleared is not None and k not in cleared)
+        save("clip-seed-steps.json", steps)
+        if not all(v["typed_ok"] and v["cleared_ok"] for v in steps.values()): return None
+        c.open_clipboard(field)
+        for k in KEEP_CLIPS:
+            n = c.find(c.ime_nodes(), "^" + k + "$", pkg=PKG)
+            if not n: return None
+            c.hold(n["cx"], n["cy"], 1.2)
+            m = c.find(c.ime_nodes(), r"^pin$", pkg=PKG)
+            if not m: return None
+            c.tap(m["cx"], m["cy"]); time.sleep(1)
+        adb("shell input keyevent KEYCODE_BACK"); time.sleep(1)
+    except (ClipUIError, SystemExit):
+        return None
+    return pinned_state("seeded")
+
+def open_personal_dictionary(label, scope=None):
+    """Keyboard settings -> Dictionary -> Personal dictionary -> a scope entry. With scope=None picks "All languages", else the first
+    English entry, and returns the exact entry text chosen; with a scope, opens exactly that entry. Returns the scope text or None."""
+    run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task", "-a", "android.intent.action.MAIN",
+              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30); time.sleep(4)
+    d = c.find(snap("dict-launch-" + label), r"^done$", fields=("text",))
+    if d: c.tap(d["cx"], d["cy"]); time.sleep(3)
+    for step in (r"^dictionary$", r"^personal dictionary$"):
+        hit = None
+        for _ in range(5):
+            hit = c.find(snap("dict-" + label), step, fields=("text",))
+            if hit: c.tap(hit["cx"], hit["cy"]); time.sleep(2); break
+            adb("shell input swipe 540 1600 540 800 300"); time.sleep(1)
+        if not hit: return None
+    ns = snap("dict-langs-" + label)
+    if scope is None: lang = c.find(ns, r"^all languages$", fields=("text",)) or c.find(ns, r"^english", fields=("text",))
+    else: lang = next((n for n in ns if n["text"] == scope), None)
+    if not lang: return None
+    c.tap(lang["cx"], lang["cy"]); time.sleep(2)
+    return lang["text"]
+
+def dictionary_has(label, scope):
+    """True/False when the SAME scope's word list was reached; None when navigation failed."""
+    if not open_personal_dictionary(label, scope): return None
+    ns = snap("dict-list-" + label)
+    return bool(c.find(ns, "^" + KEEP_WORD + "$", fields=("text",)))
+
+def seed_dictionary():
+    """Returns dict(scope, entered, listed); listed is True only when the word shows in the same scope's list."""
+    scope = open_personal_dictionary("seed")
+    if not scope: return dict(scope=None, entered=False, listed=None)
+    add = c.find(snap("dict-add"), r"^add$|add word|^\+$", fields=("desc", "text"))
+    if not add: return dict(scope=scope, entered=False, listed=None)
+    c.tap(add["cx"], add["cy"]); time.sleep(2)
+    adb("shell input text " + KEEP_WORD); time.sleep(1)
+    entered = any(n["cls"].endswith("EditText") and n["text"] == KEEP_WORD for n in snap("dict-editor"))
+    adb("shell input keyevent KEYCODE_BACK"); time.sleep(1)   # close keyboard
+    adb("shell input keyevent KEYCODE_BACK"); time.sleep(2)   # leave the editor (the entry is saved on exit)
+    return dict(scope=scope, entered=entered, listed=dictionary_has("seeded", scope) if entered else None)
+
 def update():
+    """rev18/19: every A2 case gets a row, on normal returns AND on exceptions; a skipped case is UNTESTED with the reason.
+    Exceptions are re-raised after the rows are written, so the phase's own driver-error handling still runs."""
+    err = None
+    try:
+        _update_inner()
+    except BaseException as e:
+        err = "%s: %s" % (type(e).__name__, str(e)[:160]); save("a2-exception.txt", traceback.format_exc())
+        raise
+    finally:
+        done = {x["id"] for x in CASES}
+        last = err or next((x["reason"] for x in reversed(CASES) if x["id"].startswith("A2-")), "A2 did not start")
+        for cid in ("A2-base", "A2-update", "A2-state-survives", "A2-survive-clip-pins", "A2-survive-dictionary"):
+            if cid not in done:
+                try: case(cid, "UNTESTED", ("not reached: exception in A2 (%s)" if err else "not reached: earlier A2 step ended the phase (%s)") % str(last)[:200])
+                except Exception: CASES.append(dict(id=cid, status="UNTESTED", tier="T1", reason="not reached; row written without proof (%s)" % str(last)[:200]))
+
+def _update_inner():
     if adb("shell pm path " + PKG).strip(): return case("A2-base", "BLOCKED", "package present on a fresh emulator", want=WANT_BASE, behavioral=False)
     if not BASE or sha_file(BASE) != WANT_BASE: return case("A2-base", "BLOCKED", "previous APK bytes do not match pin", want=WANT_BASE, behavioral=False)
     if not install(BASE, "base"): return case("A2-base", "FAIL", "base install failed", want=WANT_BASE, behavioral=False)
@@ -446,6 +583,10 @@ def update():
     sw = diag_switch()
     if sw and sw["checked"] == "false": tap_switch(sw)
     added = add_language(NATIVE, "seed")
+    clips0 = seed_clips()
+    dict0 = seed_dictionary()
+    clips_seeded = bool(clips0) and clips0["clipboard_on"] and all(v["seen"] and v["pinned"] for v in clips0["clips"].values())
+    save("a2-seed-extra.json", dict(clips=clips0, dictionary=dict0))
     adb("shell am force-stop " + PKG); time.sleep(2)  # flush SharedPreferences
     ime_ready(); sw = diag_switch(); subs0, _ = enabled_subtypes()
     seeded = dict(diag=sw and sw["checked"], bn=any(is_bn(s) for s in subs0))
@@ -478,8 +619,21 @@ def update():
     after = dict(diag=sw and sw["checked"], bn=any(is_bn(s) for s in subs1))
     ok = bool(kb) and kb <= ka and after == seeded
     case("A2-state-survives", "UNTESTED" if (after["diag"] is None or UNREADABLE in (fb, fa)) else "PASS" if ok else "FAIL", "files kept=%s missing=%s seeded=%s after=%s" % (kb <= ka, sorted(kb - ka)[:4], seeded, after))
-    case("A2-survive-clip-pins", "UNTESTED", "previous build UI seeding for pinned clips not implemented")
-    case("A2-survive-dictionary", "UNTESTED", "previous build UI seeding for the personal dictionary not implemented")
+    db = root("cd /data/data/%s && grep -rlaE '%s' . 2>/dev/null" % (PKG, "|".join(KEEP_CLIPS + [KEEP_WORD]))); save("a2-seed-files-after.txt", db)  # evidence only
+    if not all(chk.values()):
+        case("A2-survive-clip-pins", "UNTESTED", "no passing same-signer update to check against")
+        return case("A2-survive-dictionary", "UNTESTED", "no passing same-signer update to check against")
+    if not clips_seeded: case("A2-survive-clip-pins", "UNTESTED", "setup: pinned clips not proven seeded through the previous UI %s" % clips0)
+    else:
+        clips1 = pinned_state("after-update")
+        if clips1 is None: case("A2-survive-clip-pins", "UNTESTED", "clipboard UI could not be driven after the update")
+        else:
+            ok = clips1["clipboard_on"] and all(clips1["clips"].get(k, {}).get("seen") and clips1["clips"][k]["pinned"] for k in KEEP_CLIPS)
+            case("A2-survive-clip-pins", "PASS" if ok else "FAIL", "before=%s after=%s" % (clips0, clips1))
+    if not (dict0 and dict0["entered"] and dict0["listed"] is True): case("A2-survive-dictionary", "UNTESTED", "setup: personal dictionary word not proven entered and listed through the previous UI (%s)" % dict0)
+    else:
+        dict1 = dictionary_has("after-update", dict0["scope"])
+        case("A2-survive-dictionary", "UNTESTED" if dict1 is None else "PASS" if dict1 else "FAIL", "scope=%r word %s listed after update=%s" % (dict0["scope"], KEEP_WORD, dict1))
 
 def voice():
     """Mic UI only; no permission pre-granted. Recognition content is not testable without audio."""
