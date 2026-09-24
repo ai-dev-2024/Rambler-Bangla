@@ -107,8 +107,16 @@ def row_switch(title):
         if len(cks) > 1: return None
     return None
 
+OPEN_N = [0]
+
 def open_settings(tag):
     run_fast(["adb", "shell", "am", "start", "-W", "-n", ACT], 30); time.sleep(3)
+    OPEN_N[0] += 1; n = OPEN_N[0]
+    # raw, unfiltered evidence for every settings open (no parsing, no filtering)
+    rc, out, err = run_fast(["adb", "logcat", "-b", "all", "-d", "-v", "threadtime", "-t", "4000"], 60)  # last 4000 raw lines, unfiltered
+    save("open-%02d-%s-logcat.txt" % (n, tag), out if rc == 0 else "LOGCAT-FAILED rc=%s %s" % (rc, err[:200]))
+    rc, out, err = run_fast(["adb", "shell", "dumpsys", "input_method"], 30)
+    save("open-%02d-%s-dumpsys-input_method.txt" % (n, tag), out if rc == 0 else "DUMPSYS-FAILED rc=%s %s" % (rc, err[:200]))
 
 def settings_focused():
     w = adb("shell dumpsys window")
@@ -142,8 +150,26 @@ def find_row(title, tag):
     save("findrow-%s.json" % tag, dict(focused=focused, end=end, changed=changed, anchor="Rambler diagnostics" in seen))
     return False, None, proven, sorted(seen)
 
+TAP_N = [0]
+
+def switch_at(cx, cy):
+    """Checked state of the checkable node whose bounds contain (cx, cy) on a fresh snapshot."""
+    t = tree()
+    if t is None: return None
+    for n in t.iter("node"):
+        b = bounds(n)
+        if n.get("checkable") == "true" and b and b[0] <= cx <= b[2] and b[1] <= cy <= b[3]:
+            return n.get("checked")
+    return None
+
 def tap_switch(sw):
     c.tap(sw["cx"], sw["cy"]); time.sleep(1.5)
+    TAP_N[0] += 1; n = TAP_N[0]
+    snap("tap-%02d-after" % n)
+    after = switch_at(sw["cx"], sw["cy"])
+    save("tap-%02d.json" % n, dict(t=time.time(), cx=sw["cx"], cy=sw["cy"], res=sw.get("res"),
+                                    before=sw.get("checked"), after=after))
+    return after
 
 # ---- device facts ----
 def enabled_subtypes():
@@ -238,12 +264,30 @@ def reboot():
     time.sleep(8); adb("shell input keyevent 82")
 
 def stored_pref():
-    t = root("cat %s/*.xml" % PREFS); save("prefs-%d.txt" % int(time.time() * 1000), t)
+    """Returns 'true'/'false' when stored, None when root is proven and no prefs file holds the key (default),
+    UNREADABLE only when root is not proven or the read itself fails."""
+    ts = int(time.time() * 1000)
+    if ROOT["ok"]:
+        rc, out, err = run_fast(["adb", "shell", "ls", "-1", PREFS], 20)
+        xmls = [l for l in out.split() if l.endswith(".xml")] if rc == 0 else []
+        if rc != 0 and ("No such file" in out + err or "No such file" in err):
+            save("prefs-%d.txt" % ts, "ABSENT (no shared_prefs dir; root proven)"); return None
+        if rc == 0 and not xmls:
+            save("prefs-%d.txt" % ts, "ABSENT (shared_prefs has no xml; root proven)"); return None
+    t = root("cat %s/*.xml" % PREFS); save("prefs-%d.txt" % ts, t)
     if t == UNREADABLE: return UNREADABLE
     m = re.search(r'<boolean name="%s" value="(true|false)"' % re.escape(KEY), t); return m.group(1) if m else None
 
 def add_language(pattern, label):
-    adb("shell monkey -p %s -c android.intent.category.LAUNCHER 1" % PKG); time.sleep(4)
+    # The launcher resumes the task on its last screen (round 2: "Advanced settings"), so clear the task first,
+    # then launch fresh; fall back to backing out if "Languages" is still not reachable.
+    run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task", "-a", "android.intent.action.MAIN",
+              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30); time.sleep(4)
+    for _ in range(4):
+        if c.find(snap("root-" + label), r"^(languages|done)$", fields=("text",)): break
+        adb("shell input keyevent KEYCODE_BACK"); time.sleep(1.5)
+    else:
+        adb("shell monkey -p %s -c android.intent.category.LAUNCHER 1" % PKG); time.sleep(4)
     d = c.find(snap("launch-" + label), r"^done$", fields=("text",))
     if d: c.tap(d["cx"], d["cy"]); time.sleep(3)
     for step in (r"^languages$", r"^add keyboard$"):
@@ -382,6 +426,16 @@ def matrix():
 def diag_switch():
     found, sw, _, _ = find_row("Rambler diagnostics", "diag"); return sw
 
+def cert_digests(path):
+    """Signer certificate SHA-256 digests of an APK via apksigner from the runner's Android SDK; [] when unavailable."""
+    if not path or not os.path.exists(path): return []
+    import glob
+    roots = [os.environ.get(k, "") for k in ("ANDROID_HOME", "ANDROID_SDK_ROOT")]
+    tools = sorted(t for r in roots if r for t in glob.glob(os.path.join(r, "build-tools", "*", "apksigner")))
+    if not tools: return []
+    rc, out, err = run_fast([tools[-1], "verify", "--print-certs", path], 120)
+    return sorted(set(re.findall(r"certificate SHA-256 digest: ([0-9a-f]{64})", out))) if rc == 0 else []
+
 def update():
     if adb("shell pm path " + PKG).strip(): return case("A2-base", "BLOCKED", "package present on a fresh emulator", want=WANT_BASE, behavioral=False)
     if not BASE or sha_file(BASE) != WANT_BASE: return case("A2-base", "BLOCKED", "previous APK bytes do not match pin", want=WANT_BASE, behavioral=False)
@@ -399,11 +453,24 @@ def update():
         case("A2-update", "BLOCKED", "could not seed state through the previous UI: %s" % seeded, want=WANT_BASE)
         return case("A2-state-survives", "BLOCKED", "no seeded state to compare")
     b = proof("A2-before")
+    sig = lambda: (re.search(r"signatures:\[([^\]]*)\]", adb("shell dumpsys package " + PKG)) or re.search(r"(?!)", ""))
+    sb = sig(); sb = sb.group(1) if sb else ""
+    certs = dict(base=cert_digests(BASE), candidate=cert_digests(APK)); save("a2-signer-certs.json", certs)
+    if not certs["base"] or certs["base"] != certs["candidate"]:
+        case("A2-update", "BLOCKED", "setup: signer certificates of the pinned files not verified equal %s" % certs, behavioral=False)
+        return case("A2-state-survives", "BLOCKED", "no verified same-signer replacement")
     fb = root("cd /data/data/%s && find shared_prefs databases -type f -exec sha256sum {} + | sort -k2" % PKG); save("files-before.txt", fb)
-    if not install(APK, "update"): return case("A2-update", "FAIL", "install -r did not report Success", behavioral=False)
+    if not install(APK, "update"):
+        io = open(os.path.join(c.OUT, "install-update.txt"), errors="replace").read()
+        if "UPDATE_INCOMPATIBLE" in io: return case("A2-update", "BLOCKED", "setup: INSTALL_FAILED_UPDATE_INCOMPATIBLE (signer mismatch)", behavioral=False)
+        return case("A2-update", "FAIL", "install -r did not report Success", behavioral=False)
     time.sleep(2); a = proof("A2-after")
+    sa = sig(); sa = sa.group(1) if sa else ""
     chk = dict(vc_before=b["versionCode"] == str(EXP["version_code"]["previous"]), vc_after=a["versionCode"] == str(EXP["version_code"]["candidate"]),
-               uid=a["uid"] == b["uid"], first=a["firstInstall"] == b["firstInstall"], last=a["lastUpdate"] != b["lastUpdate"], ime=a["ime"] == b["ime"])
+               uid=a["uid"] == b["uid"], first=a["firstInstall"] == b["firstInstall"], last=a["lastUpdate"] != b["lastUpdate"], ime=a["ime"] == b["ime"],
+               pins_differ=bool(WANT) and bool(WANT_BASE) and WANT != WANT_BASE,
+               installed_before_is_base=b["base_sha256"] == WANT_BASE, installed_after_is_candidate=a["base_sha256"] == WANT)
+    save("a2-dumpsys-signatures.json", dict(before=sb, after=sa))  # evidence only
     case("A2-update", "PASS" if all(chk.values()) else "FAIL", json.dumps(chk), behavioral=False)
     fa = root("cd /data/data/%s && find shared_prefs databases -type f -exec sha256sum {} + | sort -k2" % PKG); save("files-after.txt", fa)
     kb = {l.split()[1] for l in fb.splitlines() if len(l.split()) == 2}; ka = {l.split()[1] for l in fa.splitlines() if len(l.split()) == 2}
@@ -432,40 +499,193 @@ def voice():
         case("V1-mic-ui", "PASS" if (perm or listen) else "FAIL", "permission prompt=%s listening=%s" % ([n["text"] for n in perm], [n["text"] or n["desc"] for n in listen]))
     case("V2-recognition", "UNTESTED", "emulator runs with -noaudio")
 
+GATE_LOG = {}
+ENBN = re.compile(r"enbn-gate t=(\d+) (yes|no) (settings|voice) tog=(on|off)")
+# Voice-launch lane line from the product: "HH:mm:ss.SSS subtype locale=<l> extras=<e> tag=<t> hash=<h> -> k<N>" (post-adjust lane).
+# It is written when Gboard builds the dictation request (mic tap), so it exists without audio. "gate:voice-k3" only appears
+# when recognized text is processed, which never happens on a -noaudio emulator; it is kept as evidence only.
+SUBK = re.compile(r"(\d\d):(\d\d):(\d\d)\.(\d\d\d) subtype locale=(\S*) extras=.*? tag=(\S*) hash=(-?\d+) -> k([123])\b")
+
+MARK_FALLBACK = [False]
+
+def dev_now():
+    """Device clock: epoch ms and ms since local midnight (the diagnostics log stamps HH:mm:ss.SSS).
+    Falls back to whole seconds (marker rounded down, never later than the true time) when the device date lacks %N."""
+    rc, out, _ = run_fast(["adb", "shell", "date +%s%3N' '%H:%M:%S.%3N"], 15)
+    try:
+        ms, tod = out.split(); h, m, rest = tod.split(":"); sec, milli = rest.split(".")
+        return int(ms), ((int(h) * 60 + int(m)) * 60 + int(sec)) * 1000 + int(milli)
+    except Exception:
+        pass
+    MARK_FALLBACK[0] = True
+    rc, out, _ = run_fast(["adb", "shell", "date +%s' '%H:%M:%S"], 15)
+    try:
+        s_, tod = out.split(); h, m, sec = tod.split(":")
+        return int(s_) * 1000, ((int(h) * 60 + int(m)) * 60 + int(sec)) * 1000
+    except Exception:
+        return None, None
+
+def diag_files():
+    """(name, mtime_s) of diagnostics files in Download, or None when the listing itself fails."""
+    rc, out, err = run_fast(["adb", "shell", "for f in /sdcard/Download/*; do [ -f \"$f\" ] && stat -c '%Y %n' \"$f\"; done; echo END"], 20)
+    if rc != 0 or not out.strip().endswith("END"): return None
+    r = []
+    for l in out.splitlines():
+        p = l.split(" ", 1)
+        if len(p) == 2 and p[0].isdigit() and "diag" in p[1].lower(): r.append((p[1], int(p[0])))
+    return r
+
+def set_switch(finder, want, tag):
+    """Set a switch and prove it from a fresh snapshot. Returns (row_switch_or_None, verified_bool)."""
+    sw = finder(tag)
+    if not sw: return None, False
+    if sw["checked"] != want:
+        after = tap_switch(sw)
+        sw = finder(tag + "-re")
+        if not sw or after != want: return sw, False
+    return sw, sw["checked"] == want
+
+def gate_log_case():
+    """V3-gate-log from the current, provenance-proven voice decisions only."""
+    spec = EXP.get("gate_log") or {}
+    save("gate-log.json", GATE_LOG)
+    need, off = list(spec.get("cases", [])), list(spec.get("off_cases", []))
+    if not need: return case("V3-gate-log", "UNTESTED", "no gate_log cases declared")
+    per = {}
+    for cid in need:
+        g = GATE_LOG.get(cid)
+        if g is None: per[cid] = "UNTESTED: lane not reached"
+        elif not g["pre_ok"]: per[cid] = "BLOCKED: preconditions %s" % g["pre"]
+        elif not g["prov_ok"]: per[cid] = "UNTESTED: provenance %s" % g["prov"]
+        elif not g["active_snapshot"]["ok"]: per[cid] = "UNTESTED: active subtype snapshot invalid %s" % g["active_snapshot"]
+        elif g["subtype_mismatched"]: per[cid] = "UNTESTED: current voice-launch lines not bound to the active subtype %s" % [(r["locale"], r["tag"], r["hash"], "k" + r["k"]) for r in g["subtype_mismatched"]][:3]
+        elif not g["lanes"]: per[cid] = "UNTESTED: no current voice-launch line bound to the active subtype"
+        elif any(x["kind"] == "voice" for x in g["malformed"]): per[cid] = "FAIL: current malformed caller=voice line %s" % [x["raw"] for x in g["malformed"] if x["kind"] == "voice"][:3]
+        elif any(x["kind"] in ("undatable", "no-caller") for x in g["malformed"]): per[cid] = "UNTESTED: undatable or caller-less enbn-gate line %s" % [x["raw"] for x in g["malformed"] if x["kind"] in ("undatable", "no-caller")][:3]
+        elif not g["voice"]: per[cid] = "UNTESTED: no current voice gate line"
+        elif any(l["res"] != "yes" or l["tog"] != "on" or l["err"] for l in g["voice"]): per[cid] = "FAIL: current no/error/toggle-off line %s" % [l["raw"] for l in g["voice"] if l["res"] != "yes" or l["tog"] != "on" or l["err"]][:3]
+        else: per[cid] = "PASS"
+    for cid in off:
+        g = GATE_LOG.get(cid)
+        if not g: per[cid] = "UNTESTED: negative control not reached"
+        elif not g["pre_ok"]: per[cid] = "BLOCKED: negative control preconditions %s" % g["pre"]
+        elif not g["prov_ok"]: per[cid] = "UNTESTED: negative control provenance %s" % g["prov"]
+        elif not g["active_snapshot"]["ok"]: per[cid] = "UNTESTED: active subtype snapshot invalid %s" % g["active_snapshot"]
+        elif g["subtype_mismatched"]: per[cid] = "UNTESTED: current voice-launch lines not bound to the active subtype %s" % [(r["locale"], r["tag"], r["hash"], "k" + r["k"]) for r in g["subtype_mismatched"]][:3]
+        elif not g["lanes"]: per[cid] = "UNTESTED: no current voice-launch line bound to the active subtype, so absence proves nothing"
+        elif any(x["kind"] == "voice" for x in g["malformed"]): per[cid] = "FAIL: current malformed caller=voice line %s" % [x["raw"] for x in g["malformed"] if x["kind"] == "voice"][:3]
+        elif any(x["kind"] in ("undatable", "no-caller") for x in g["malformed"]): per[cid] = "UNTESTED: undatable or caller-less enbn-gate line"
+        elif g["voice"]: per[cid] = "FAIL: voice gate ran with the toggle proven off in the UI %s" % [l["raw"] for l in g["voice"]][:3]
+        else: per[cid] = "PASS: no current voice gate line with the toggle off"
+    st = [v.split(":")[0] for v in per.values() if not v.startswith("N/A")]
+    if not any(v == "PASS" for k, v in per.items() if k in need): st.append("UNTESTED")
+    status = "FAIL" if "FAIL" in st else "BLOCKED" if "BLOCKED" in st else "UNTESTED" if "UNTESTED" in st else "PASS"
+    case("V3-gate-log", status, json.dumps(per, ensure_ascii=False))
+
 def lanes():
-    """Voice lane per subtype/toggle from the app's diagnostics file, one file per combination. Proves routing, not text."""
+    try:
+        lanes_inner()
+    finally:
+        gate_log_case()
+
+def lanes_inner():
+    """Voice lane per subtype/toggle from the app's diagnostics file, one new file per combination, bound to a device-time
+    marker. Proves routing, not text. Only lines stamped after the marker, in files created after it, are graded."""
     if not install(APK, "lanes") or not HARNESS or not install(HARNESS, "harness-l"):
         return case("V3-lane-latin-off", "UNTESTED", "install failed", behavioral=False)
     ime_ready(); adb("shell pm grant %s android.permission.RECORD_AUDIO" % PKG)
     if not add_language(LATN, "lanes") or not any(is_latn(s) for s in enabled_subtypes()[0]):
         return case("V3-lane-latin-off", "BLOCKED", "Bangla (Latin) not enabled via UI")
+    row_finder = lambda tag: find_row(TITLE, tag)[1]
+    diag_finder = lambda tag: find_row("Rambler diagnostics", tag)[1]
     for sub, tog in (("latin", "false"), ("latin", "true"), ("english", "false"), ("english", "true")):
         cid = "V3-lane-%s-%s" % (sub, "on" if tog == "true" else "off")
-        _, sw, _, _ = find_row(TITLE, cid)
-        if sw and sw["checked"] != tog: tap_switch(sw); _, sw, _, _ = find_row(TITLE, cid + "b")
-        run_fast(["adb", "shell", "rm -f /sdcard/Download/*diag*"], 20)
-        d = diag_switch()
-        if not d or not sw: case(cid, "UNTESTED", "switch missing (row=%s diag=%s)" % (bool(sw), bool(d))); continue
-        if d["checked"] == "false": tap_switch(d)
+        pre, prov = {}, {}
+        _, pre["row_toggle"] = set_switch(row_finder, tog, cid)
+        run_fast(["adb", "shell", "rm -f /sdcard/Download/*diag* /sdcard/Download/*Diag* /sdcard/Download/*DIAG*"], 20)
+        left = diag_files(); prov["cleared"] = left == []
+        _, pre["diag_on"] = set_switch(diag_finder, "true", cid + "-diag")
         adb("shell am force-stop " + PKG); ime_ready(); time.sleep(4)
+        pt = root("cat %s/*.xml" % PREFS); save("prefs-%s-armed.txt" % cid, pt)
+        pb = lambda k: (re.search(r'<boolean name="%s" value="(true|false)"' % re.escape(k), pt).group(1) if pt != UNREADABLE and re.search(r'<boolean name="%s" value="(true|false)"' % re.escape(k), pt) else ("false" if pt != UNREADABLE else None))
+        pre["diag_armed_stored"] = pb("pref_rambler_diag_armed") == "true"
+        pre["row_toggle_stored"] = pb(KEY) == tog
         harness_focus(cid)
         active = select_subtype(is_latn if sub == "latin" else is_en, cid)
-        adb("shell log -t RoundMark " + cid)
+        pre["subtype"] = bool(is_latn(active) if sub == "latin" else (is_en(active) and not is_latn(active)))
+        # rev15: snapshot the active subtype (hash + locale) right before the mic tap; lane lines are bound to it
+        act_hash = adb("shell settings get secure selected_input_method_subtype").strip()
+        act_loc = enabled_subtypes()[1].get(act_hash, "")
+        # rev16: the lane's required subtype class is part of the binding (latin lane: Bangla (Latin); english lane: en, not Latn)
+        req = (lambda l: is_latn(l)) if sub == "latin" else (lambda l: is_en(l) and not is_latn(l))
+        act_ok = bool(re.fullmatch(r"-?\d+", act_hash)) and act_hash != "-1" and bool(act_loc) and act_loc == active and req(act_loc)
+        mark_ms, mark_tod = dev_now(); prov["marker"] = mark_ms is not None
+        adb("shell log -t RoundMark '%s t=%s'" % (cid, mark_ms))
         mic = c.find([n for n in snap(cid + "-ime") if n["pkg"] == PKG], r"voice|microphone|speak|dictat", fields=("desc", "text"))
+        pre["mic"] = bool(mic)
         if mic: c.tap(mic["cx"], mic["cy"]); time.sleep(4); adb("shell input keyevent KEYCODE_BACK"); time.sleep(1)
         adb("shell am force-stop t.h")
-        d = diag_switch()
-        if d and d["checked"] == "true": tap_switch(d); time.sleep(2)
+        _, prov["diag_off"] = set_switch(diag_finder, "false", cid + "-diagoff")
+        time.sleep(2)
+        files = diag_files() or []
+        fresh = [f for f, m in files if mark_ms is not None and m >= mark_ms // 1000]
+        prov["files"] = [(f, m) for f, m in files]; prov["fresh"] = fresh
         dst = os.path.join(c.OUT, "diag-" + cid); os.makedirs(dst, exist_ok=True)
-        sh("adb pull /sdcard/Download/ '%s' >/dev/null 2>&1" % dst)
-        txt = "".join(open(os.path.join(r_, f), errors="replace").read() for r_, _, fs in os.walk(dst) for f in fs if "diag" in f.lower())
-        gates = sorted(set(re.findall(r"gate:voice-k([123])", txt)))
-        right_sub = is_latn(active) if sub == "latin" else is_en(active)
-        if not right_sub or not mic or len(gates) != 1:
-            case(cid, "UNTESTED", "active=%s mic=%s gates=%s toggle=%s" % (active, bool(mic), gates, sw["checked"])); continue
+        txt = ""
+        for f in fresh:
+            local = os.path.join(dst, os.path.basename(f))
+            if run_fast(["adb", "pull", f, local], 60)[0] == 0: txt += open(local, errors="replace").read() + "\n"
+        prov_ok = prov["cleared"] and prov["marker"] and prov["diag_off"] and len(fresh) >= 1 and bool(txt.strip())
+        # current lines only: gate:voice-kN by time of day, enbn lines by epoch ms, both at or after the marker
+        prov["tz"] = adb("shell getprop persist.sys.timezone").strip()
+        prov["not_near_midnight"] = mark_tod is not None and mark_tod < 86400000 - 3600000
+        prov["ms_marker"] = not MARK_FALLBACK[0]
+        prov_ok = prov_ok and prov["not_near_midnight"] and prov["ms_marker"]
+        gates, subk, stale, mismatched = [], [], 0, []
+        norm = lambda v: (v or "").lower().replace("-", "_")
+        for m in SUBK.finditer(txt):
+            tod = ((int(m.group(1)) * 60 + int(m.group(2))) * 60 + int(m.group(3))) * 1000 + int(m.group(4))
+            if not (mark_tod is not None and 0 <= tod - mark_tod < 3600000): stale += 1; continue
+            rec = dict(tod=tod, locale=m.group(5), tag=m.group(6), hash=m.group(7), k=m.group(8), raw=m.group(0)[:300])
+            # bound = same subtype hash as the active snapshot AND locale or tag names the active locale
+            rec["bound"] = act_ok and rec["hash"] == act_hash and norm(act_loc) in (norm(rec["locale"]), norm(rec["tag"])) and (req(rec["locale"]) or req(rec["tag"]))
+            subk.append(rec)
+            if rec["bound"]: gates.append(rec["k"])
+            else: mismatched.append(rec)
+        text_gates = re.findall(r"gate:voice-k([123])", txt)
+        voice, other, malformed = [], [], []
+        for l in txt.splitlines():
+            if "enbn-gate" not in l: continue
+            tm = re.search(r"enbn-gate t=(\d+)", l)
+            if tm and int(tm.group(1)) < (mark_ms or 0): stale += 1; continue
+            m = ENBN.search(l)
+            if not m:
+                cm = re.search(r"\b(settings|voice)\b", l)
+                kind = "undatable" if not tm else "voice" if cm and cm.group(1) == "voice" else "settings" if cm else "no-caller"
+                malformed.append(dict(kind=kind, raw=l.strip()[:300])); continue
+            rec = dict(t=int(m.group(1)), res=m.group(2), caller=m.group(3), tog=m.group(4), raw=l.strip()[:420],
+                       err=bool(re.search(r"\b(app|imm|list|own|hash|secure)-err\b", l)))
+            (voice if rec["caller"] == "voice" else other).append(rec)
+        prefs = [l.strip()[:300] for l in txt.splitlines() if "enbn-pref t=" in l]
+        pre_ok = all(pre.values())
+        GATE_LOG[cid] = dict(pre=pre, pre_ok=pre_ok, prov=prov, prov_ok=prov_ok, voice=voice, settings=other, pref=prefs, malformed=malformed,
+                             subtype_lines=subk, subtype_mismatched=mismatched, active_snapshot=dict(hash=act_hash, locale=act_loc, ok=act_ok),
+                             text_gates_evidence_only=text_gates,
+                             lanes=gates, stale_ignored=stale, mark_ms=mark_ms, active=active)
+        gset = sorted(set(gates))
+        if not pre_ok:
+            case(cid, "BLOCKED", "preconditions not proven %s active=%s" % (pre, active)); continue
+        if not prov_ok:
+            case(cid, "UNTESTED", "diagnostics provenance not proven %s" % prov); continue
+        if not act_ok:
+            case(cid, "UNTESTED", "active subtype snapshot unavailable or inconsistent hash=%s locale=%s selected=%s" % (act_hash, act_loc, active)); continue
+        if mismatched:
+            case(cid, "UNTESTED", "current lane lines not bound to the active subtype (hash=%s locale=%s): %s" % (act_hash, act_loc, [(r["locale"], r["tag"], r["hash"], "k" + r["k"]) for r in mismatched][:4])); continue
+        if len(gset) != 1:
+            case(cid, "UNTESTED", "current lanes=%s (need exactly one) stale_ignored=%d" % (gset, stale)); continue
         want = EXP["voice_lane"].get("%s_%s" % (sub, "on" if tog == "true" else "off"))
-        if want is None: case(cid, "OBSERVED", "active=%s lane=k%s (no predeclared pass value)" % (active, gates[0]))
-        else: case(cid, "PASS" if gates[0] == str(want) else "FAIL", "active=%s lane=k%s expected=k%s" % (active, gates[0], want))
+        if want is None: case(cid, "OBSERVED", "active=%s lane=k%s (no predeclared pass value)" % (active, gset[0]))
+        else: case(cid, "PASS" if gset[0] == str(want) else "FAIL", "active=%s hash=%s lane=k%s expected=k%s bound_lines=%d stale_ignored=%d" % (active, act_hash, gset[0], want, len(gates), stale))
 
 def clip():
     if not install(APK, "clip"): return case("D1-clip-drag", "FAIL", "install failed", behavioral=False)
