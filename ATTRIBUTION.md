@@ -39,3 +39,10 @@ modification notices retained in each source file.
   pairs. MPL 2.0 license text: https://mozilla.org/MPL/2.0/
 - cmudict (BSD) is NOT shipped in V29; it is reserved for the post-test-pass
   Tier-1b derivation workstream.
+
+## V29.3 loanword spelling data
+
+- **CMU Pronouncing Dictionary** (Carnegie Mellon University, BSD-style
+  licence) - pronunciations used by a rule mapper to generate the V29.3
+  English-to-Bangla loanword table (data/loanspell/loan-table.tsv and the
+  generated GboardRamblerLoanTable.java). Full notice: NOTICE-cmudict.txt.
