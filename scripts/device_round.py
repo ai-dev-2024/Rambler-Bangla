@@ -32,7 +32,35 @@ CASES = []; LAST_XML = [""]
 def save(name, text): open(os.path.join(c.OUT, name), "w").write(text if isinstance(text, str) else json.dumps(text, indent=1))
 def sh(cmd, timeout=120): return c.sh(cmd, timeout=timeout)
 def adb(a, timeout=120): return c.adb(a, timeout=timeout)
-def root(cmd, timeout=120): return adb("shell su 0 sh -c " + json.dumps(cmd), timeout=timeout)
+ROOT = {"ok": None, "why": ""}
+UNREADABLE = "UNREADABLE"
+
+def run_fast(argv, timeout):
+    """Runs a command with stdin closed and a hard timeout; never raises, never hangs."""
+    try:
+        r = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout, r.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "", "timeout"
+    except Exception as e:
+        return -2, "", repr(e)
+
+def root_setup():
+    """adb root once per phase, then prove the adb shell is uid 0. No su is used anywhere."""
+    rc, out, err = run_fast(["adb", "root"], 30)
+    run_fast(["adb", "wait-for-device"], 120)
+    time.sleep(3)
+    rc2, uid, err2 = run_fast(["adb", "shell", "id", "-u"], 15)
+    ROOT["ok"] = rc2 == 0 and uid.strip() == "0"
+    ROOT["why"] = "adb root rc=%s out=%r; id -u=%r" % (rc, (out + err).strip()[:120], uid.strip()[:20])
+    save("root-setup.json", ROOT)
+    return ROOT["ok"]
+
+def root(cmd, timeout=30):
+    """Root-only read. Returns UNREADABLE (never hangs) when root was not proven or the command times out."""
+    if not ROOT["ok"]: return UNREADABLE
+    rc, out, err = run_fast(["adb", "shell", cmd], timeout)
+    return out if rc == 0 else UNREADABLE
 def sha_file(p): return hashlib.sha256(open(p, "rb").read()).hexdigest()
 
 # ---- private values, checked against the public commitment ----
@@ -80,7 +108,7 @@ def row_switch(title):
     return None
 
 def open_settings(tag):
-    root("am start -W -n " + ACT); time.sleep(3)
+    run_fast(["adb", "shell", "am", "start", "-W", "-n", ACT], 30); time.sleep(3)
 
 def settings_focused():
     w = adb("shell dumpsys window")
@@ -144,18 +172,20 @@ is_en = lambda l: l.lower().startswith("en")
 def proof(cid):
     paths = adb("shell pm path " + PKG).replace("package:", "").split()
     base = [p for p in paths if p.endswith("/base.apk")]
-    bsha = root("sha256sum " + base[0]).split()[0] if base else ""
+    rc, hout, _ = run_fast(["adb", "shell", "sha256sum", base[0]], 60) if base else (1, "", "")
+    bsha = hout.split()[0] if rc == 0 and hout.split() else ""
     dp = adb("shell dumpsys package " + PKG)
     g = lambda rx: (re.search(rx, dp).group(1).strip() if re.search(rx, dp) else "")
     flags = g(r"pkgFlags=\[([^\]]*)\]") + " " + g(r"privateFlags=\[([^\]]*)\]")
     pid = adb("shell pidof " + PKG).strip()
     mapped = root("grep -m1 -o '/data/app/[^ ]*base.apk' /proc/%s/maps" % pid).strip() if pid else ""
+    maps_readable = mapped != UNREADABLE
     p = dict(case=cid, t=time.time(), paths=paths, base_sha256=bsha, split=len(paths) > 1,
              versionCode=g(r"versionCode=(\d+)"), firstInstall=g(r"firstInstallTime=([^\n]+)"),
              lastUpdate=g(r"lastUpdateTime=([^\n]+)"), uid=g(r"userId=(\d+)"), sharedUser=("sharedUser=" in dp),
              debuggable=("DEBUGGABLE" in flags), testOnly=("TEST_ONLY" in flags),
              instrumentation=(PKG in adb("shell pm list instrumentation")), pid=pid,
-             pid_maps_base=bool(base) and mapped == base[0],
+             pid_maps_base=(bool(base) and mapped == base[0]) if maps_readable else None, root_ok=ROOT["ok"],
              ime=adb("shell settings get secure default_input_method").strip(),
              subtype=adb("shell settings get secure selected_input_method_subtype").strip(),
              fingerprint=adb("shell getprop ro.build.fingerprint").strip())
@@ -172,10 +202,13 @@ def logs_reset():
 
 def case(cid, status, reason, tier="T1", want=None, behavioral=True, **ev):
     p = proof(cid)
+    if status == "FAIL" and UNREADABLE in reason:
+        status, reason = "UNTESTED", "root-only read unavailable (%s): %s" % (ROOT["why"], reason)
     if ENV_MISMATCH and status in ("FAIL", "UNTESTED", "BLOCKED"):
         status, reason = "ENV-MISMATCH", "ENVIRONMENT MISMATCH (no arm64 support on this emulator, NO_MATCHING_ABIS at %s); not a product result. %s" % (ENV_MISMATCH, reason)
     if status == "PASS" and tier == "T1" and not grounded(p, WANT if want is None else want, behavioral):
-        status, reason = "BLOCKED", "grounding failed (hash/split/flags/pid map): " + reason
+        why = "root unavailable, pid map unreadable" if behavioral and p["pid_maps_base"] is None else "hash/split/flags/pid map"
+        status, reason = "BLOCKED", "grounding failed (%s): %s" % (why, reason)
     CASES.append(dict(id=cid, status=status, tier=tier, reason=reason, expected=EXP["cases"].get(cid, ""), **ev))
     sh("adb logcat -b all -d -v threadtime > '%s/logcat-%s.txt'" % (c.OUT, cid))
     sh("adb shell dumpsys dropbox --print > '%s/dropbox-%s.txt'" % (c.OUT, cid))
@@ -206,6 +239,7 @@ def reboot():
 
 def stored_pref():
     t = root("cat %s/*.xml" % PREFS); save("prefs-%d.txt" % int(time.time() * 1000), t)
+    if t == UNREADABLE: return UNREADABLE
     m = re.search(r'<boolean name="%s" value="(true|false)"' % re.escape(KEY), t); return m.group(1) if m else None
 
 def add_language(pattern, label):
@@ -376,7 +410,7 @@ def update():
     ime_ready(); sw = diag_switch(); subs1, _ = enabled_subtypes()
     after = dict(diag=sw and sw["checked"], bn=any(is_bn(s) for s in subs1))
     ok = bool(kb) and kb <= ka and after == seeded
-    case("A2-state-survives", "UNTESTED" if after["diag"] is None else "PASS" if ok else "FAIL", "files kept=%s missing=%s seeded=%s after=%s" % (kb <= ka, sorted(kb - ka)[:4], seeded, after))
+    case("A2-state-survives", "UNTESTED" if (after["diag"] is None or UNREADABLE in (fb, fa)) else "PASS" if ok else "FAIL", "files kept=%s missing=%s seeded=%s after=%s" % (kb <= ka, sorted(kb - ka)[:4], seeded, after))
     case("A2-survive-clip-pins", "UNTESTED", "previous build UI seeding for pinned clips not implemented")
     case("A2-survive-dictionary", "UNTESTED", "previous build UI seeding for the personal dictionary not implemented")
 
@@ -409,7 +443,7 @@ def lanes():
         cid = "V3-lane-%s-%s" % (sub, "on" if tog == "true" else "off")
         _, sw, _, _ = find_row(TITLE, cid)
         if sw and sw["checked"] != tog: tap_switch(sw); _, sw, _, _ = find_row(TITLE, cid + "b")
-        root("rm -f /sdcard/Download/*diag*")
+        run_fast(["adb", "shell", "rm -f /sdcard/Download/*diag*"], 20)
         d = diag_switch()
         if not d or not sw: case(cid, "UNTESTED", "switch missing (row=%s diag=%s)" % (bool(sw), bool(d))); continue
         if d["checked"] == "false": tap_switch(d)
@@ -466,6 +500,7 @@ try:
     if not PRIV_OK:
         case("Z-private-values", "BLOCKED", "private values missing or do not match the published commitment", behavioral=False)
     else:
+        root_setup()
         PHASES[PHASE]()
 except Exception:
     save("driver-exception.txt", traceback.format_exc())
