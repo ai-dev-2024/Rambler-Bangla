@@ -137,10 +137,27 @@ def clear_system_anr(tag, ns=None):
 
 def open_settings(tag):
     for attempt in range(5):
-        run_fast(["adb", "shell", "am", "start", "-W", "-n", ACT], 30)
+        rc, out, err = run_fast(["adb", "shell", "am", "start", "-W", "-n", ACT], 30)
         time.sleep(2)
         snap("open-%s-%d" % (tag, attempt))
         if settings_focused(): break
+        if "Permission Denial" in out + err or "not exported" in out + err:
+            # The private settings Activity cannot be started from shell after reboot (rc6 logcat
+            # records a denial from uid 2000). The exported launcher is the app's supported entry.
+            run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task",
+                      "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER",
+                      "-f", "0x10008000", "-p", PKG], 30)
+            time.sleep(3)
+            ns = snap("settings-launch-%s-%d" % (tag, attempt))
+            done = c.find([n for n in ns if n["pkg"] == PKG], r"^done$", fields=("text",))
+            if done:
+                c.tap(done["cx"], done["cy"]); time.sleep(2)
+                ns = snap("settings-launch-done-%s-%d" % (tag, attempt))
+            gear = c.find([n for n in ns if n["pkg"] == PKG], r"^settings$|keyboard settings", fields=("desc", "text"))
+            if gear:
+                c.tap(gear["cx"], gear["cy"]); time.sleep(2)
+                snap("settings-gear-%s-%d" % (tag, attempt))
+                if settings_focused(): break
     OPEN_N[0] += 1; n = OPEN_N[0]
     rc, out, err = run_fast(["adb", "logcat", "-b", "all", "-d", "-v", "threadtime", "-t", "4000"], 60)
     save("open-%02d-%s-logcat.txt" % (n, tag), out if rc == 0 else "LOGCAT-FAILED rc=%s %s" % (rc, err[:200]))
@@ -296,11 +313,23 @@ def ime_ready():
     return ""
 
 def reboot():
+    """Reboot resets adbd to shell uid. Re-establish and prove root before any post-reboot app-data or pid-map read.
+    No product verdict may PASS on an unproven post-reboot root state."""
+    ROOT.update(ok=False, why="reboot in progress; post-reboot root not yet proven")
     adb("reboot"); adb("wait-for-device", timeout=300)
+    ready = False
     for _ in range(90):
-        if sh("adb shell getprop sys.boot_completed").strip() == "1": break
+        if sh("adb shell getprop sys.boot_completed").strip() == "1": ready = True; break
         time.sleep(3)
-    time.sleep(8); adb("shell input keyevent 82")
+    if not ready:
+        ROOT.update(ok=False, why="boot did not complete within 270s")
+        save("root-after-reboot.json", dict(ROOT, boot_completed=False))
+        return False
+    time.sleep(8)
+    ok = root_setup()
+    save("root-after-reboot.json", dict(ROOT, boot_completed=True))
+    if ok: adb("shell input keyevent 82")
+    return ok
 
 def stored_pref():
     """Returns 'true'/'false' when stored, None when root is proven and no prefs file holds the key (default),
@@ -442,7 +471,10 @@ def fresh():
     adb("shell am force-stop " + PKG); ime_ready()
     _, sw, _, _ = find_row(TITLE, "fs"); v = stored_pref()
     case("B3-persist-forcestop", ("UNTESTED" if not sw else "PASS" if sw["checked"] == "true" and v == "true" else "FAIL"), "ui=%s stored=%s" % (sw and sw["checked"], v))
-    reboot(); ime_ready()
+    if not reboot():
+        case("B3-persist-reboot", "UNTESTED", "post-reboot root not proven: %s" % ROOT["why"])
+        return
+    ime_ready()
     _, sw, _, _ = find_row(TITLE, "rb"); v = stored_pref()
     case("B3-persist-reboot", ("UNTESTED" if not sw else "PASS" if sw["checked"] == "true" and v == "true" else "FAIL"), "ui=%s stored=%s" % (sw and sw["checked"], v))
     if add_language(NATIVE, "native") and any(is_bn(s) for s in enabled_subtypes()[0]):
@@ -707,14 +739,23 @@ def voice():
     have_rs = bool(re.search(r"^\s*\S+/\S+", rs, re.M))
     case("V0-recognition-service", "PASS" if have_rs else "FAIL", "RecognitionService present=%s" % have_rs, tier="T1-env", behavioral=False)
     if not HARNESS or not install(HARNESS, "harness-v"): return case("V1-mic-ui", "UNTESTED", "harness missing")
-    harness_focus("v")
+    focus = harness_focus("v")
     mic = c.find([n for n in snap("v-ime") if n["pkg"] == PKG], r"voice|microphone|speak|dictat", fields=("desc", "text"))
-    if not mic: case("V1-mic-ui", "FAIL", "no voice key on keyboard")
+    if not mic: case("V1-mic-ui", "FAIL", "no voice key on keyboard (harness focus=%s)" % bool(focus))
     else:
         c.tap(mic["cx"], mic["cy"]); time.sleep(4); after = snap("v-after")
         perm = [n for n in after if "permissioncontroller" in n["pkg"] and re.search(r"allow|while using|only this time", n["text"] or "", re.I)]
         listen = [n for n in after if n["pkg"] == PKG and re.search(r"speak now|listening|tap to pause|try saying", (n["text"] or "") + " " + (n["desc"] or ""), re.I)]
-        case("V1-mic-ui", "PASS" if (perm or listen) else "FAIL", "permission prompt=%s listening=%s" % ([n["text"] for n in perm], [n["text"] or n["desc"] for n in listen]))
+        if perm or listen:
+            case("V1-mic-ui", "PASS", "permission prompt=%s listening=%s" % ([n["text"] for n in perm], [n["text"] or n["desc"] for n in listen]))
+        else:
+            # rc6 evidence: the key IS visible on this build ("Use voice typing", bounds [958,1507][1074,1628]),
+            # but on the -noaudio API-35 image the tap returned to the keyboard with no permission prompt and
+            # no listening UI, and a Pixel Launcher ANR was active in the phase. That outcome cannot distinguish
+            # a product fault from the rig, so it is an explicit emulator-limit UNTESTED - never a silent PASS
+            # and never a product FAIL on this image.
+            case("V1-mic-ui", "UNTESTED",
+                 "emulator-limit: mic key visible and tapped, but no permission prompt/listening UI on this -noaudio API-35 image (harness focus=%s); product fault not distinguishable on this rig" % bool(focus))
     case("V2-recognition", "UNTESTED", "emulator runs with -noaudio")
 
 GATE_LOG = {}
