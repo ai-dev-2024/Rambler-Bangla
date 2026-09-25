@@ -86,7 +86,12 @@ TITLE = PRIV.get("row_title", "\x00"); DESC = PRIV.get("row_desc_prefix", "\x00"
 
 # ---- UI helpers ----
 def snap(tag):
-    xml = c.snap(tag); LAST_XML[0] = xml; return c.nodes(xml)
+    # Preserve raw ANR screenshot/XML, then retry after choosing Wait on a known system modal.
+    for attempt in range(5):
+        xml = c.snap(tag + ("-retry%d" % attempt if attempt else ""))
+        LAST_XML[0] = xml; ns = c.nodes(xml)
+        if not clear_system_anr("%s-%d" % (tag, attempt), ns): return ns
+    return ns
 
 def tree():
     x = LAST_XML[0]
@@ -119,45 +124,69 @@ def row_switch(title):
 
 OPEN_N = [0]
 
+def clear_system_anr(tag, ns=None):
+    """Only handle the known system launcher ANR; never dismiss an app crash as noise."""
+    if not c.find(ns or [], r"pixel launcher isn.t responding", fields=("text",)):
+        return False
+    wait = c.find(ns, r"^wait$", fields=("text",))
+    save("system-anr-%s.json" % tag, {"pixel_launcher": True, "wait_present": bool(wait)})
+    if wait: c.tap(wait["cx"], wait["cy"])
+    else: return False
+    time.sleep(2)
+    return True
+
 def open_settings(tag):
-    run_fast(["adb", "shell", "am", "start", "-W", "-n", ACT], 30); time.sleep(3)
+    for attempt in range(5):
+        run_fast(["adb", "shell", "am", "start", "-W", "-n", ACT], 30)
+        time.sleep(2)
+        snap("open-%s-%d" % (tag, attempt))
+        if settings_focused(): break
     OPEN_N[0] += 1; n = OPEN_N[0]
-    # raw, unfiltered evidence for every settings open (no parsing, no filtering)
-    rc, out, err = run_fast(["adb", "logcat", "-b", "all", "-d", "-v", "threadtime", "-t", "4000"], 60)  # last 4000 raw lines, unfiltered
+    rc, out, err = run_fast(["adb", "logcat", "-b", "all", "-d", "-v", "threadtime", "-t", "4000"], 60)
     save("open-%02d-%s-logcat.txt" % (n, tag), out if rc == 0 else "LOGCAT-FAILED rc=%s %s" % (rc, err[:200]))
     rc, out, err = run_fast(["adb", "shell", "dumpsys", "input_method"], 30)
     save("open-%02d-%s-dumpsys-input_method.txt" % (n, tag), out if rc == 0 else "DUMPSYS-FAILED rc=%s %s" % (rc, err[:200]))
+    return settings_focused()
 
 def settings_focused():
     w = adb("shell dumpsys window")
     m = re.search(r"mCurrentFocus=[^\n]*", w)
     return bool(m and "GboardPatchesSettingsActivity" in m.group(0))
 
+def visible_bounds(node, width, height):
+    b = bounds(node)
+    return bool(b and 0 <= b[0] < b[2] <= width and 0 <= b[1] < b[3] <= height)
+
 def find_row(title, tag):
-    """Scrolls the settings list from top to end looking for the row.
-    Returns (found, switch, absent_proven, texts). Absence is only proven when the settings activity has focus,
-    the diagnostics anchor row was seen, at least one swipe changed the visible text, and the list end was reached."""
-    open_settings(tag)
-    focused = settings_focused()
-    for _ in range(4): adb("shell input swipe 540 700 540 1700 200")
-    seen, prev, changed, end = set(), None, 0, False
+    """Proof requires focused settings and a title, description and switch inside the real viewport."""
+    if not open_settings(tag):
+        save("findrow-%s.json" % tag, dict(focused=False, reason="settings did not gain focus"))
+        return False, None, False, []
+    width, height = map(int, re.findall(r"\d+", adb("shell wm size").splitlines()[-1])[-2:])
+    for _ in range(4): adb("shell input swipe %d %d %d %d 200" % (width//2, height//3, width//2, height*3//4))
+    seen, prev, changed, end, title_seen = set(), None, 0, False, False
     for i in range(25):
         ns = snap("%s-%02d" % (tag, i))
-        texts = tuple(n["text"] for n in ns if n["text"])
+        if not settings_focused():
+            save("findrow-%s.json" % tag, dict(focused=False, reason="focus lost during scan"))
+            return False, None, False, sorted(seen)
+        texts = tuple(n["text"] for n in ns if n["text"] and n["b"][3] <= height)
         seen.update(texts)
         if title in texts:
-            if not settings_focused():  # a hit only counts on the focused settings screen
-                save("findrow-%s.json" % tag, dict(hit=True, focused=False))
-                return False, None, False, sorted(seen)
-            return True, row_switch(title), False, sorted(seen)
+            title_seen = True
+            t = tree()
+            hits = [n for n in t.iter("node") if n.get("text") == title and visible_bounds(n, width, height)] if t is not None else []
+            sw = row_switch(title) if hits else None
+            if sw and sw["row"][3] <= height and sw["cy"] < height:
+                save("findrow-%s.json" % tag, dict(hit=True, focused=True, switch_visible=True))
+                return True, sw, False, sorted(seen)
         if prev is not None:
             if texts == prev: end = True; break
             changed += 1
         prev = texts
-        adb("shell input swipe 540 1600 540 800 400"); time.sleep(1)
-    focused = focused and settings_focused()
-    proven = focused and end and changed >= 1 and "Rambler diagnostics" in seen
-    save("findrow-%s.json" % tag, dict(focused=focused, end=end, changed=changed, anchor="Rambler diagnostics" in seen))
+        adb("shell input swipe %d %d %d %d 400" % (width//2, height*3//4, width//2, height//3)); time.sleep(1)
+    proven = settings_focused() and end and changed >= 1 and "Rambler diagnostics" in seen and not title_seen
+    save("findrow-%s.json" % tag, dict(focused=settings_focused(), end=end, changed=changed, anchor="Rambler diagnostics" in seen, title_seen=title_seen, viewport=[width,height]))
     return False, None, proven, sorted(seen)
 
 TAP_N = [0]
@@ -424,13 +453,13 @@ def matrix():
     if not install(APK, "matrix"): return case("B2-S4-english", "FAIL", "install failed", behavioral=False)
     ime_ready()
     subs, _ = enabled_subtypes()
-    if any(is_en(s) for s in subs) and not any(is_latn(s) or is_bn(s) for s in subs):
+    if len(subs) == 1 and is_en(subs[0]):
         check_row("B2-S4-english", "s4", EXP["row_visible"]["english"], subs)
     else: case("B2-S4-english", "BLOCKED", "English-only state not present; subtypes=%s" % subs)
     if add_language(NATIVE, "native-only"):
         adb("shell am force-stop " + PKG); ime_ready(); time.sleep(4)
     subs, _ = enabled_subtypes()
-    if any(is_bn(s) for s in subs) and not any(is_latn(s) for s in subs): check_row("B2-S1-native", "s1", EXP["row_visible"]["native"], subs)
+    if len(subs) == 1 and is_bn(subs[0]): check_row("B2-S1-native", "s1", EXP["row_visible"]["native"], subs)
     else: case("B2-S1-native", "BLOCKED", "native-only state not reached; subtypes=%s" % subs)
 
 def diag_switch():
