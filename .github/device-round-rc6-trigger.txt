@@ -1,0 +1,1 @@
+rc6 device round trigger
