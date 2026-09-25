@@ -346,6 +346,40 @@ def add_language(pattern, label):
     if dn: c.tap(dn["cx"], dn["cy"]); time.sleep(4)
     return bool(dn)
 
+def remove_english_for_native_only():
+    """Remove the default English keyboard through Gboard Languages UI, after native is added."""
+    before, _ = enabled_subtypes()
+    if len(before) == 1 and is_bn(before[0]): return True
+    if not any(is_bn(x) for x in before) or not any(is_en(x) for x in before): return False
+    # Start the settings root afresh. Any unseen UI state is a setup blocker, never a product FAIL.
+    run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task", "-a", "android.intent.action.MAIN",
+              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30)
+    time.sleep(3)
+    lang = c.find(snap("native-remove-root"), r"^languages$", fields=("text",))
+    if not lang:
+        save("native-remove-result.json", {"before": before, "blocked": "Languages entry unavailable"})
+        return False
+    c.tap(lang["cx"], lang["cy"]); time.sleep(2)
+    ns = snap("native-remove-list")
+    english = c.find([n for n in ns if n["pkg"] == PKG], r"^english \(us\)$", fields=("text",))
+    if not english:
+        save("native-remove-result.json", {"before": before, "blocked": "English entry unavailable"})
+        return False
+    # Try the documented swipe-to-remove gesture; verify the actual enabled subtype state afterward.
+    x1, y, x2 = english["b"][0], english["cy"], english["b"][2]
+    adb("shell input swipe %d %d %d %d 500" % (max(x1+150, x2-120), y, min(x1+80, x2-180), y))
+    time.sleep(1)
+    ns = snap("native-remove-revealed")
+    delete = c.find([n for n in ns if n["pkg"] == PKG], r"^(delete|remove)$", fields=("text", "desc"))
+    if delete:
+        c.tap(delete["cx"], delete["cy"]); time.sleep(2)
+        ns = snap("native-remove-confirm")
+        confirm = c.find(ns, r"^(delete|remove)$", fields=("text",))
+        if confirm: c.tap(confirm["cx"], confirm["cy"]); time.sleep(2)
+    after, _ = enabled_subtypes()
+    save("native-remove-result.json", {"before": before, "after": after, "delete_revealed": bool(delete)})
+    return len(after) == 1 and is_bn(after[0])
+
 LATN = r"^Bangla \(Latin\)$|^বাংলা \(লাতিন\)$"
 NATIVE = r"^বাংলা \(বাংলাদেশ\)$|^Bangla \(Bangladesh\)$"
 
@@ -457,6 +491,7 @@ def matrix():
         check_row("B2-S4-english", "s4", EXP["row_visible"]["english"], subs)
     else: case("B2-S4-english", "BLOCKED", "English-only state not present; subtypes=%s" % subs)
     if add_language(NATIVE, "native-only"):
+        remove_english_for_native_only()
         adb("shell am force-stop " + PKG); ime_ready(); time.sleep(4)
     subs, _ = enabled_subtypes()
     if len(subs) == 1 and is_bn(subs[0]): check_row("B2-S1-native", "s1", EXP["row_visible"]["native"], subs)
