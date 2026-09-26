@@ -35,7 +35,12 @@ def find(nodes,pat,pkg=None):
  return next((n for n in nodes if (not pkg or n['pkg']==pkg) and (r.search(n['text']) or r.search(n['desc']))),None)
 def tap(n):
  adb('shell','input','tap',*[str(i) for i in n['xy']],check=True);time.sleep(1.5)
-def ime_nodes(label): return [n for n in snap(label) if n['pkg']==PKG]
+def ime_nodes(label):
+ for attempt in range(12):
+  nodes=[n for n in snap(label if attempt==0 else f'{label}-retry-{attempt}') if n['pkg']==PKG]
+  if nodes:return nodes
+  time.sleep(1)
+ return []
 def field():
  ns=snap('fixture')
  n=find(ns,'Tap here for keyboard clipboard',FIX)
