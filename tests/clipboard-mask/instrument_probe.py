@@ -12,9 +12,9 @@ try:
    a('shell','uiautomator','dump','/sdcard/view.xml');z=a('exec-out','cat','/sdcard/view.xml');open(f'{O}/{stage}-{j}.xml','w').write(z)
    if '<hierarchy' not in z:time.sleep(2);continue
    m=next((n for n in E.fromstring(z[z.index('<'):]).iter('node') if n.get('text')==pat),None)
-   if m:break
+   if m is not None:break
    a('shell','input','swipe','540','1900','540','650','400')
-  if not m:raise Exception('missing '+pat)
+  if m is None:raise Exception('missing '+pat)
   b=list(map(int,re.findall(r'\d+',m.get('bounds'))));x=(b[0]+b[2])//2;y=(b[1]+b[3])//2
   if stage=='main':a('shell','input','tap',str(x),str(y));time.sleep(2)
   else:
