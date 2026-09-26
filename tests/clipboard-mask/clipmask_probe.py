@@ -58,8 +58,18 @@ def toggle_mask(nodes, expected, label):
  raise AssertionError('mask switch did not change after switch/row taps')
 def ime_nodes(label):
  for attempt in range(12):
-  nodes=[n for n in snap(label if attempt==0 else f'{label}-retry-{attempt}') if n['pkg']==PKG]
-  if nodes:return nodes
+  nodes=snap(label if attempt==0 else f'{label}-retry-{attempt}')
+  if find(nodes,"Pixel Launcher isn't responding"):
+   w=find(nodes,'^Wait$')
+   if w:tap(w)
+   adb('shell','input','keyevent','4',check=True)
+   adb('shell','am','start','-n',FIX+'/.MainActivity',check=True)
+   time.sleep(1)
+   f=find(snap(f'{label}-field-{attempt}'),'Tap here for keyboard clipboard',FIX)
+   if f:tap(f)
+   continue
+  app=[n for n in nodes if n['pkg']==PKG]
+  if app:return app
   time.sleep(1)
  return []
 def field():
