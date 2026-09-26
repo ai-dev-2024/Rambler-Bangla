@@ -28,11 +28,19 @@ def snap(label):
  for x in root.iter('node'):
   b=list(map(int,re.findall(r'\d+',x.get('bounds',''))))
   if len(b)==4:
-   nodes.append(dict(text=x.get('text',''),desc=x.get('content-desc',''),pkg=x.get('package',''),cls=x.get('class',''),xy=((b[0]+b[2])//2,(b[1]+b[3])//2)))
+   nodes.append(dict(text=x.get('text',''),desc=x.get('content-desc',''),pkg=x.get('package',''),cls=x.get('class',''),checked=x.get('checked','false'),xy=((b[0]+b[2])//2,(b[1]+b[3])//2)))
  return nodes
 def find(nodes,pat,pkg=None):
  r=re.compile(pat,re.I)
  return next((n for n in nodes if (not pkg or n['pkg']==pkg) and (r.search(n['text']) or r.search(n['desc']))),None)
+def mask_switch(nodes, expected):
+ label=find(nodes,r'^App-marked sensitive text$',PKG)
+ if not label:raise RuntimeError('mask label absent')
+ switches=[n for n in nodes if n['pkg']==PKG and n['cls']=='android.widget.Switch' and n['xy'][0]>label['xy'][0] and 0<n['xy'][1]-label['xy'][1]<180]
+ if len(switches)!=1:raise RuntimeError(f'mask switch ambiguous: {len(switches)}')
+ sw=switches[0]
+ if sw['checked']!=str(expected).lower():raise AssertionError(f'mask switch expected checked={expected}, saw {sw["checked"]}')
+ return sw
 def tap(n):
  adb('shell','input','tap',*[str(i) for i in n['xy']],check=True);time.sleep(1.5)
 def ime_nodes(label):
@@ -71,7 +79,7 @@ def evaluate(nodes,case,expected):
  values=[n['text'] for n in nodes if n['pkg']==PKG]+[n['desc'] for n in nodes if n['pkg']==PKG]
  strings='\n'.join(values)
  token=MARKED if case.startswith('marked') else UNMARKED
- bullets=[x for x in values if len(x)==len(token) and set(x.strip())=={'•'}]
+ bullets=[x for x in values if len(x)==len(token) and set(x.strip())=={chr(0x2022)}]
  outcome={'raw_visible':token in strings,'expected_raw_visible':expected,'bullet_candidates':bullets[:3], 'board_node_count':len(nodes)}
  results[case]=outcome
  if outcome['raw_visible']!=expected:raise AssertionError(f'{case}: raw visibility mismatch: {outcome}')
@@ -112,10 +120,7 @@ def main():
   n=find(ns,r'^App-marked sensitive text$',PKG)
  if not n:raise RuntimeError('App-marked sensitive text entry not found under Advanced after scrolling')
  snap('settings-toggle-before')
- n=find(ns,r'^App-marked sensitive text$',PKG)
- if not n:raise RuntimeError('App-marked sensitive text toggle not found')
- # A switch may be a sibling with checked state: retain full XML to audit before/after.
- tap(n);snap('settings-toggled-on')
+ tap(mask_switch(ns,False));mask_switch(snap('settings-toggled-on'),True)
  ns=copy_case('marked-on','Copy app-marked email')
  evaluate(ns,'marked-on',False)
  adb('shell','am','start','-n',PKG+'/com.google.android.apps.inputmethod.latin.preference.SettingsActivity',check=True);time.sleep(2)
@@ -131,7 +136,7 @@ def main():
   adb('shell','input','swipe','540','1900','540','650','400',check=True);time.sleep(0.7)
   ns=snap(f'settings-advanced-again-scroll-{i+1}');n=find(ns,r'^App-marked sensitive text$',PKG)
  if not n:raise RuntimeError('mask toggle absent during re-enable')
- tap(n);snap('settings-reenabled')
+ tap(mask_switch(ns,True));mask_switch(snap('settings-reenabled'),False)
  ns=copy_case('marked-reenabled','Copy app-marked email');evaluate(ns,'marked-reenabled',True)
  print('Default OFF, UI-toggled ON and restored OFF checked on Android emulator.')
 if __name__=='__main__':
