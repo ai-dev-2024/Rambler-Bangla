@@ -46,16 +46,20 @@ def tap(n):
  adb('shell','input','tap',*[str(i) for i in n['xy']],check=True);time.sleep(1.5)
 def toggle_mask(nodes, expected, label):
  sw=mask_switch(nodes,expected)
- # The row is clickable in the app. Try its switch and then the row's text panel.
- for attempt,(x,y) in enumerate((sw['xy'],(sw['xy'][0]-250,sw['xy'][1]))):
+ x,y=sw['xy']
+ attempts=[('tap', ['shell','input','touchscreen','tap',str(x),str(y)]),
+           ('row', ['shell','input','touchscreen','tap',str(x-250),str(y)]),
+           ('long', ['shell','input','touchscreen','swipe',str(x),str(y),str(x),str(y),'180']),
+           ('slide', ['shell','input','touchscreen','swipe',str(x-45),str(y),str(x+45),str(y),'260'])]
+ for name,args in attempts:
   adb('logcat','-c')
-  adb('shell','input','tap',str(x),str(y),check=True);time.sleep(1.5)
-  after=snap(f'{label}-tap-{attempt}')
-  open(f'{OUT}/{label}-tap-{attempt}.logcat','w').write(adb('logcat','-d','-v','threadtime'))
-  open(f'{OUT}/{label}-tap-{attempt}.focus','w').write(adb('shell','dumpsys','window','windows'))
+  adb(*args,check=True);time.sleep(1.5)
+  after=snap(f'{label}-{name}')
+  open(f'{OUT}/{label}-{name}.logcat','w').write(adb('logcat','-d','-v','threadtime'))
+  open(f'{OUT}/{label}-{name}.focus','w').write(adb('shell','dumpsys','window','windows'))
   try:return mask_switch(after,not expected)
   except AssertionError:pass
- raise AssertionError('mask switch did not change after switch/row taps')
+ raise AssertionError('mask switch did not change after touchscreen tap, row, long press, or slide')
 def ime_nodes(label):
  for attempt in range(12):
   nodes=snap(label if attempt==0 else f'{label}-retry-{attempt}')
