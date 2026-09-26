@@ -347,21 +347,43 @@ def stored_pref():
     m = re.search(r'<boolean name="%s" value="(true|false)"' % re.escape(KEY), t); return m.group(1) if m else None
 
 def settings_root(label):
-    """Leave stale editors/tasks and prove the Gboard settings root, not merely a launcher success."""
-    adb("shell input keyevent KEYCODE_HOME"); time.sleep(1)
-    run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task", "-a", "android.intent.action.MAIN",
-              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30)
-    time.sleep(3)
-    for i in range(8):
+    """Enter exported settings; prove the visible root before any product grading.
+
+    A same-package activity redirect is allowed only when the root UI is visible.
+    Off-package, onboarding, or unrecognized screens remain navigation blocks.
+    """
+    target = PKG + "/com.google.android.apps.inputmethod.latin.preference.SettingsActivity"
+    rc, out, err = run_fast(["adb", "shell", "am", "start", "-W", "-n", target], 30)
+    save("settings-root-%s-start.txt" % label, "rc=%s\n%s\n%s" % (rc, out, err))
+    if rc != 0 or not re.search(r"(?m)^Status: ok\s*$", out) or "Permission Denial" in out + err:
+        save("settings-root-%s-proof.json" % label, {"ok": False, "reason": "start failed", "rc": rc})
+        return False
+    # A bounded wait permits a same-package redirect or slow first draw; no blind taps/back.
+    proof = {"ok": False, "reason": "settings root not proven", "observations": []}
+    for i in range(4):
+        if i: time.sleep(1)
         ns = snap("settings-root-%s-%d" % (label, i))
-        texts = {n["text"].lower() for n in ns if n["pkg"] == PKG and n["text"]}
-        if "gboard settings" in texts and "languages" in texts: return True
-        done = c.find(ns, r"^done$", fields=("text",))
-        if done: c.tap(done["cx"], done["cy"])
-        else: adb("shell input keyevent KEYCODE_BACK")
-        time.sleep(2)
-    save("settings-root-%s-failed.json" % label, {"foreground": adb("shell dumpsys activity activities | grep mResumedActivity"), "texts": sorted(texts)})
-    return False
+        focus = adb("shell dumpsys window")
+        current = re.search(r"(?m)^\s*mCurrentFocus=([^\n]*)", focus)
+        focused = current.group(1).strip() if current else ""
+        # Match an actual focused component, not an incidental occurrence of PKG
+        # elsewhere in dumpsys output (or an overlay from another application).
+        component = re.search(r"\bu\d+\s+(" + re.escape(PKG) + r")/([^\s}]+)", focused)
+        owned = bool(component)
+        nodes = [n for n in ns if n["pkg"] == PKG] if owned else []
+        title = any((n["text"] or n["desc"]).strip().casefold() == "gboard settings" for n in nodes)
+        languages = any(n["text"].strip().casefold() == "languages" and
+                        n["res"] == "android:id/title" for n in nodes)
+        ok = owned and title and languages
+        proof["observations"].append({"attempt": i, "focus": focused,
+                                      "focused_component": component.group(2) if component else "",
+                                      "owned": owned, "root_title": title,
+                                      "languages_row": languages})
+        if ok:
+            proof.update(ok=True, reason="package-owned settings root visible")
+            break
+    save("settings-root-%s-proof.json" % label, proof)
+    return proof["ok"]
 
 def add_language(pattern, label, query="bangla"):
     if not settings_root(label): return False
