@@ -12,6 +12,7 @@ import android.widget.LinearLayout;
 public final class MainActivity extends Activity {
   static final String UNMARKED = "ordinary.probe@example.test";
   static final String MARKED = "marked.probe@example.test";
+  static final String MARKED_ON = "marked-on.probe@example.test";
   void copy(String text, boolean sensitive) {
     ClipData clip=ClipData.newPlainText("probe",text);
     if (sensitive) {
@@ -28,6 +29,8 @@ public final class MainActivity extends Activity {
     a.setOnClickListener(v->copy(UNMARKED,false));layout.addView(a);
     Button b=new Button(this);b.setText("Copy app-marked email");b.setContentDescription("Copy app-marked email");
     b.setOnClickListener(v->copy(MARKED,true));layout.addView(b);
+    Button c=new Button(this);c.setText("Copy distinct app-marked email");c.setContentDescription("Copy distinct app-marked email");
+    c.setOnClickListener(v->copy(MARKED_ON,true));layout.addView(c);
     EditText edit=new EditText(this);edit.setSingleLine(true);edit.setHint("Tap here for keyboard clipboard");
     layout.addView(edit);setContentView(layout);
   }
