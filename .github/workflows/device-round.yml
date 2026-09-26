@@ -121,7 +121,10 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel_5
-          emulator-options: -no-snapshot-load -no-snapshot-save -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          # Mic-capable image candidate: -noaudio removed; host audio enabled. This is NOT proof that
+          # the hosted runner supplies microphone samples. V2 stays UNTESTED until an injected
+          # waveform and the recognized text are both verified on-device.
+          emulator-options: -no-snapshot-load -no-snapshot-save -wipe-data -no-window -gpu swiftshader_indirect -allow-host-audio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: |
             adb wait-for-device

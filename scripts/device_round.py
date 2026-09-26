@@ -346,67 +346,71 @@ def stored_pref():
     if t == UNREADABLE: return UNREADABLE
     m = re.search(r'<boolean name="%s" value="(true|false)"' % re.escape(KEY), t); return m.group(1) if m else None
 
-def add_language(pattern, label):
-    # The launcher resumes the task on its last screen (round 2: "Advanced settings"), so clear the task first,
-    # then launch fresh; fall back to backing out if "Languages" is still not reachable.
+def settings_root(label):
+    """Leave stale editors/tasks and prove the Gboard settings root, not merely a launcher success."""
+    adb("shell input keyevent KEYCODE_HOME"); time.sleep(1)
     run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task", "-a", "android.intent.action.MAIN",
-              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30); time.sleep(4)
-    for _ in range(4):
-        if c.find(snap("root-" + label), r"^(languages|done)$", fields=("text",)): break
-        adb("shell input keyevent KEYCODE_BACK"); time.sleep(1.5)
-    else:
-        adb("shell monkey -p %s -c android.intent.category.LAUNCHER 1" % PKG); time.sleep(4)
-    d = c.find(snap("launch-" + label), r"^done$", fields=("text",))
-    if d: c.tap(d["cx"], d["cy"]); time.sleep(3)
+              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30)
+    time.sleep(3)
+    for i in range(8):
+        ns = snap("settings-root-%s-%d" % (label, i))
+        texts = {n["text"].lower() for n in ns if n["pkg"] == PKG and n["text"]}
+        if "gboard settings" in texts and "languages" in texts: return True
+        done = c.find(ns, r"^done$", fields=("text",))
+        if done: c.tap(done["cx"], done["cy"])
+        else: adb("shell input keyevent KEYCODE_BACK")
+        time.sleep(2)
+    save("settings-root-%s-failed.json" % label, {"foreground": adb("shell dumpsys activity activities | grep mResumedActivity"), "texts": sorted(texts)})
+    return False
+
+def add_language(pattern, label, query="bangla"):
+    if not settings_root(label): return False
     for step in (r"^languages$", r"^add keyboard$"):
         hit = None
         for _ in range(5):
             hit = c.find(snap("lang-" + label), step, fields=("text",))
             if hit: c.tap(hit["cx"], hit["cy"]); time.sleep(2); break
             adb("shell input swipe 540 1600 540 800 300"); time.sleep(1)
-        if not hit and step == r"^add keyboard$": return False
+        if not hit: return False
     s = c.find(snap("search-" + label), r"search", fields=("text", "desc", "res"))
     if s: c.tap(s["cx"], s["cy"])
-    adb("shell input text bangla"); time.sleep(2); adb("shell input keyevent KEYCODE_BACK"); time.sleep(1)
+    adb("shell input text " + query); time.sleep(2); adb("shell input keyevent KEYCODE_BACK"); time.sleep(1)
     r = [n for n in snap("results-" + label) if n["pkg"] == PKG and re.search(pattern, n["text"] or "")]
     if not r: return False
     c.tap(r[0]["cx"], r[0]["cy"]); time.sleep(3)
     dn = c.find(snap("layouts-" + label), r"^done$", fields=("text",))
-    if dn: c.tap(dn["cx"], dn["cy"]); time.sleep(4)
-    return bool(dn)
+    if not dn: return False
+    c.tap(dn["cx"], dn["cy"]); time.sleep(4)
+    return True
 
 def remove_english_for_native_only():
-    """Remove the default English keyboard through Gboard Languages UI, after native is added."""
+    """From Languages list use Edit, select English, Delete; verify enabled subtypes afterward."""
     before, _ = enabled_subtypes()
     if len(before) == 1 and is_bn(before[0]): return True
     if not any(is_bn(x) for x in before) or not any(is_en(x) for x in before): return False
-    # Start the settings root afresh. Any unseen UI state is a setup blocker, never a product FAIL.
-    run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task", "-a", "android.intent.action.MAIN",
-              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30)
-    time.sleep(3)
+    if not settings_root("native-remove"):
+        save("native-remove-result.json", {"before": before, "blocked": "Gboard settings root unavailable"}); return False
     lang = c.find(snap("native-remove-root"), r"^languages$", fields=("text",))
-    if not lang:
-        save("native-remove-result.json", {"before": before, "blocked": "Languages entry unavailable"})
-        return False
+    if not lang: return False
     c.tap(lang["cx"], lang["cy"]); time.sleep(2)
     ns = snap("native-remove-list")
     english = c.find([n for n in ns if n["pkg"] == PKG], r"^english \(us\)$", fields=("text",))
-    if not english:
-        save("native-remove-result.json", {"before": before, "blocked": "English entry unavailable"})
-        return False
-    # Try the documented swipe-to-remove gesture; verify the actual enabled subtype state afterward.
-    x1, y, x2 = english["b"][0], english["cy"], english["b"][2]
-    adb("shell input swipe %d %d %d %d 500" % (max(x1+150, x2-120), y, min(x1+80, x2-180), y))
-    time.sleep(1)
-    ns = snap("native-remove-revealed")
+    edit = c.find([n for n in ns if n["pkg"] == PKG], r"^edit$", fields=("text", "desc"))
+    if not english or not edit: return False
+    c.tap(edit["cx"], edit["cy"]); time.sleep(1)
+    ns = snap("native-remove-edit")
+    english = c.find([n for n in ns if n["pkg"] == PKG], r"^english \(us\)$", fields=("text",))
+    if not english: return False
+    c.tap(english["cx"], english["cy"]); time.sleep(1)
+    ns = snap("native-remove-selected")
     delete = c.find([n for n in ns if n["pkg"] == PKG], r"^(delete|remove)$", fields=("text", "desc"))
-    if delete:
-        c.tap(delete["cx"], delete["cy"]); time.sleep(2)
-        ns = snap("native-remove-confirm")
-        confirm = c.find(ns, r"^(delete|remove)$", fields=("text",))
-        if confirm: c.tap(confirm["cx"], confirm["cy"]); time.sleep(2)
+    if not delete: return False
+    c.tap(delete["cx"], delete["cy"]); time.sleep(2)
+    ns = snap("native-remove-confirm")
+    confirm = c.find(ns, r"^(delete|remove)$", fields=("text",))
+    if confirm: c.tap(confirm["cx"], confirm["cy"]); time.sleep(2)
     after, _ = enabled_subtypes()
-    save("native-remove-result.json", {"before": before, "after": after, "delete_revealed": bool(delete)})
+    save("native-remove-result.json", {"before": before, "after": after, "edit": True, "delete": True})
     return len(after) == 1 and is_bn(after[0])
 
 LATN = r"^Bangla \(Latin\)$|^বাংলা \(লাতিন\)$"
@@ -417,7 +421,7 @@ def select_subtype(want, tag):
     for i in range(6):
         cur = active_locale(loc)
         if want(cur): return cur
-        k = c.find([n for n in snap("langkey-%s-%d" % (tag, i)) if n["pkg"] == PKG], r"language|globe|switch input", fields=("desc",))
+        k = c.find([n for n in snap("langkey-%s-%d" % (tag, i)) if n["pkg"] == PKG], r"next language|language|globe|switch input", fields=("desc",))
         if not k: return cur
         c.tap(k["cx"], k["cy"]); time.sleep(2)
     return active_locale(loc)
@@ -519,15 +523,20 @@ def matrix():
     if not install(APK, "matrix"): return case("B2-S4-english", "FAIL", "install failed", behavioral=False)
     ime_ready()
     subs, _ = enabled_subtypes()
+    if not (len(subs) == 1 and is_en(subs[0])):
+        # A fresh API-35 image may start with zero enabled subtypes: make English-only explicitly.
+        if not subs: add_language(r"^English \(US\)$", "english-only", "english")
+    subs, _ = enabled_subtypes()
     if len(subs) == 1 and is_en(subs[0]):
         check_row("B2-S4-english", "s4", EXP["row_visible"]["english"], subs)
-    else: case("B2-S4-english", "BLOCKED", "English-only state not present; subtypes=%s" % subs)
-    if add_language(NATIVE, "native-only"):
+    else: case("B2-S4-english", "BLOCKED", "English-only state not proven; subtypes=%s" % subs)
+    added = add_language(NATIVE, "native-only")
+    if added and any(is_bn(x) for x in enabled_subtypes()[0]):
         remove_english_for_native_only()
         adb("shell am force-stop " + PKG); ime_ready(); time.sleep(4)
     subs, _ = enabled_subtypes()
     if len(subs) == 1 and is_bn(subs[0]): check_row("B2-S1-native", "s1", EXP["row_visible"]["native"], subs)
-    else: case("B2-S1-native", "BLOCKED", "native-only state not reached; subtypes=%s" % subs)
+    else: case("B2-S1-native", "BLOCKED", "native-only state not reached; add=%s subtypes=%s" % (added, subs))
 
 def diag_switch():
     found, sw, _, _ = find_row("Rambler diagnostics", "diag"); return sw
@@ -613,19 +622,16 @@ def seed_clips():
     return pinned_state("seeded")
 
 def open_personal_dictionary(label, scope=None):
-    """Keyboard settings -> Dictionary -> Personal dictionary -> a scope entry. With scope=None picks "All languages", else the first
-    English entry, and returns the exact entry text chosen; with a scope, opens exactly that entry. Returns the scope text or None."""
-    run_fast(["adb", "shell", "am", "start", "-W", "--activity-clear-task", "-a", "android.intent.action.MAIN",
-              "-c", "android.intent.category.LAUNCHER", "-f", "0x10008000", "-p", PKG], 30); time.sleep(4)
-    d = c.find(snap("dict-launch-" + label), r"^done$", fields=("text",))
-    if d: c.tap(d["cx"], d["cy"]); time.sleep(3)
-    for step in (r"^dictionary$", r"^personal dictionary$"):
+    """Prove Gboard root and each named page; never tap through an unrelated editor."""
+    if not settings_root("dict-" + label): return None
+    for step, page in ((r"^dictionary$", "Dictionary"), (r"^personal dictionary$", "Personal dictionary")):
         hit = None
         for _ in range(5):
-            hit = c.find(snap("dict-" + label), step, fields=("text",))
+            ns = snap("dict-" + label)
+            hit = c.find([n for n in ns if n["pkg"] == PKG], step, fields=("text",))
             if hit: c.tap(hit["cx"], hit["cy"]); time.sleep(2); break
             adb("shell input swipe 540 1600 540 800 300"); time.sleep(1)
-        if not hit: return None
+        if not hit: save("dict-navigation-%s.json" % label, {"missing": page}); return None
     ns = snap("dict-langs-" + label)
     if scope is None: lang = c.find(ns, r"^all languages$", fields=("text",)) or c.find(ns, r"^english", fields=("text",))
     else: lang = next((n for n in ns if n["text"] == scope), None)
@@ -755,8 +761,8 @@ def voice():
             # a product fault from the rig, so it is an explicit emulator-limit UNTESTED - never a silent PASS
             # and never a product FAIL on this image.
             case("V1-mic-ui", "UNTESTED",
-                 "emulator-limit: mic key visible and tapped, but no permission prompt/listening UI on this -noaudio API-35 image (harness focus=%s); product fault not distinguishable on this rig" % bool(focus))
-    case("V2-recognition", "UNTESTED", "emulator runs with -noaudio")
+                 "emulator-limit: mic key visible and tapped, but no permission prompt/listening UI; host audio input is not yet proven (harness focus=%s); product fault not distinguishable on this rig" % bool(focus))
+    case("V2-recognition", "UNTESTED", "mic-capable image is configured but host input and recognition are not proven; no recognized phrase is asserted")
 
 GATE_LOG = {}
 ENBN = re.compile(r"enbn-gate t=(\d+) (yes|no) (settings|voice) tog=(on|off)")
@@ -823,6 +829,8 @@ def gate_log_case():
         elif any(x["kind"] in ("undatable", "no-caller") for x in g["malformed"]): per[cid] = "UNTESTED: undatable or caller-less enbn-gate line %s" % [x["raw"] for x in g["malformed"] if x["kind"] in ("undatable", "no-caller")][:3]
         elif not g["voice"]: per[cid] = "UNTESTED: no current voice gate line"
         elif any(l["res"] != "yes" or l["tog"] != "on" or l["err"] for l in g["voice"]): per[cid] = "FAIL: current no/error/toggle-off line %s" % [l["raw"] for l in g["voice"] if l["res"] != "yes" or l["tog"] != "on" or l["err"]][:3]
+        elif any(" via=imm-own" not in l["raw"] or not re.search(r"\bown=\d+\[[^\]]*bn[^,\]]*[/]bn-Latn(?:[,\]])", l["raw"]) for l in g["voice"]):
+            per[cid] = "UNTESTED: current voice gate lacks positive IMM-own Bangla Latin evidence %s" % [l["raw"] for l in g["voice"]][:3]
         else: per[cid] = "PASS"
     for cid in off:
         g = GATE_LOG.get(cid)
