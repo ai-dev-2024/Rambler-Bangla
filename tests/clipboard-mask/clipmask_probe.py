@@ -6,6 +6,7 @@ PKG='com.aidev2024.ramblerbangla'
 FIX='test.clip.fixture'
 UNMARKED='ordinary.probe@example.test'
 MARKED='marked.probe@example.test'
+MARKED_ON='marked-on.probe@example.test'
 os.makedirs(OUT,exist_ok=True)
 results={}
 def adb(*args,check=False):
@@ -43,6 +44,18 @@ def mask_switch(nodes, expected):
  return sw
 def tap(n):
  adb('shell','input','tap',*[str(i) for i in n['xy']],check=True);time.sleep(1.5)
+def toggle_mask(nodes, expected, label):
+ sw=mask_switch(nodes,expected)
+ # The row is clickable in the app. Try its switch and then the row's text panel.
+ for attempt,(x,y) in enumerate((sw['xy'],(sw['xy'][0]-250,sw['xy'][1]))):
+  adb('logcat','-c')
+  adb('shell','input','tap',str(x),str(y),check=True);time.sleep(1.5)
+  after=snap(f'{label}-tap-{attempt}')
+  open(f'{OUT}/{label}-tap-{attempt}.logcat','w').write(adb('logcat','-d','-v','threadtime'))
+  open(f'{OUT}/{label}-tap-{attempt}.focus','w').write(adb('shell','dumpsys','window','windows'))
+  try:return mask_switch(after,not expected)
+  except AssertionError:pass
+ raise AssertionError('mask switch did not change after switch/row taps')
 def ime_nodes(label):
  for attempt in range(12):
   nodes=[n for n in snap(label if attempt==0 else f'{label}-retry-{attempt}') if n['pkg']==PKG]
@@ -78,8 +91,8 @@ def copy_case(label,button):
 def evaluate(nodes,case,expected):
  values=[n['text'] for n in nodes if n['pkg']==PKG]+[n['desc'] for n in nodes if n['pkg']==PKG]
  strings='\n'.join(values)
- token=MARKED if case.startswith('marked') else UNMARKED
- bullets=[x for x in values if len(x)==len(token) and set(x.strip())=={chr(0x2022)}]
+ token=MARKED_ON if case=='marked-on' else MARKED if case.startswith('marked') else UNMARKED
+ bullets=[x for x in values if len(x)==len(token) and set(x.strip())=={'•'}]
  outcome={'raw_visible':token in strings,'expected_raw_visible':expected,'bullet_candidates':bullets[:3], 'board_node_count':len(nodes)}
  results[case]=outcome
  if outcome['raw_visible']!=expected:raise AssertionError(f'{case}: raw visibility mismatch: {outcome}')
@@ -120,8 +133,8 @@ def main():
   n=find(ns,r'^App-marked sensitive text$',PKG)
  if not n:raise RuntimeError('App-marked sensitive text entry not found under Advanced after scrolling')
  snap('settings-toggle-before')
- tap(mask_switch(ns,False));mask_switch(snap('settings-toggled-on'),True)
- ns=copy_case('marked-on','Copy app-marked email')
+ toggle_mask(ns,False,'settings-toggled-on')
+ ns=copy_case('marked-on','Copy distinct app-marked email')
  evaluate(ns,'marked-on',False)
  adb('shell','am','start','-n',PKG+'/com.google.android.apps.inputmethod.latin.preference.SettingsActivity',check=True);time.sleep(2)
  ns=snap('settings-main-again'); n=find(ns,r'^Advanced settings$',PKG)
@@ -136,7 +149,7 @@ def main():
   adb('shell','input','swipe','540','1900','540','650','400',check=True);time.sleep(0.7)
   ns=snap(f'settings-advanced-again-scroll-{i+1}');n=find(ns,r'^App-marked sensitive text$',PKG)
  if not n:raise RuntimeError('mask toggle absent during re-enable')
- tap(mask_switch(ns,True));mask_switch(snap('settings-reenabled'),False)
+ toggle_mask(ns,True,'settings-reenabled')
  ns=copy_case('marked-reenabled','Copy app-marked email');evaluate(ns,'marked-reenabled',True)
  print('Default OFF, UI-toggled ON and restored OFF checked on Android emulator.')
 if __name__=='__main__':
