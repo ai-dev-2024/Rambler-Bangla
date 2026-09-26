@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Fetch pinned diagnostic APK
         run: |
-          curl -fsSL --max-time 300 https://litter.catbox.moe/640kbr.apk -o /tmp/diagnostic.apk
+          curl -fsSL --max-time 300 https://litter.catbox.moe/sv7o9f.apk -o /tmp/diagnostic.apk
           echo '92adef7d8dc3313950dee17bceba1b9bba43e12e79cfd9d15255cb5332c8a257  /tmp/diagnostic.apk' | sha256sum -c -
       - name: Enable emulator acceleration
         run: |
