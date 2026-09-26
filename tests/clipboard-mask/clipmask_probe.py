@@ -42,10 +42,15 @@ def ime_nodes(label):
   time.sleep(1)
  return []
 def field():
- ns=snap('fixture')
- n=find(ns,'Tap here for keyboard clipboard',FIX)
- if not n: raise RuntimeError('fixture text field absent')
- tap(n);return n
+ for i in range(12):
+  ns=snap('fixture' if i==0 else f'fixture-retry-{i}')
+  if find(ns,"Pixel Launcher isn't responding"):
+   w=find(ns,'^Wait$')
+   if w:tap(w)
+  n=find(ns,'Tap here for keyboard clipboard',FIX)
+  if n:tap(n);return n
+  time.sleep(1)
+ raise RuntimeError('fixture text field absent after retry')
 def clipboard(label):
  ns=ime_nodes(label+'-ime')
  if not ns: raise RuntimeError('keyboard invisible')
