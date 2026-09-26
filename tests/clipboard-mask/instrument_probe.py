@@ -10,6 +10,7 @@ try:
  for stage,pat in [('main','Advanced settings'),('advanced','App-marked sensitive text')]:
   for j in range(8):
    a('shell','uiautomator','dump','/sdcard/view.xml');z=a('exec-out','cat','/sdcard/view.xml');open(f'{O}/{stage}-{j}.xml','w').write(z)
+   if '<hierarchy' not in z:time.sleep(2);continue
    m=next((n for n in E.fromstring(z[z.index('<'):]).iter('node') if n.get('text')==pat),None)
    if m:break
    a('shell','input','swipe','540','1900','540','650','400')
