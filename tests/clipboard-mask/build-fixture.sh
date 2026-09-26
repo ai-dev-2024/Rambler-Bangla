@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
 PLAT="$ANDROID_HOME/platforms/$(ls "$ANDROID_HOME/platforms" | sort -V | tail -1)/android.jar"
 mkdir -p out/cls out/dex
-javac -source 8 -target 8 -nowarn -cp "$PLAT" -d out/cls src/test/clip/fixture/MainActivity.java
+javac -source 8 -target 8 -nowarn -cp "$PLAT" -d out/cls MainActivity.java
 "$BT/d8" --min-api 32 --lib "$PLAT" --output out/dex $(find out/cls -name '*.class')
 "$BT/aapt2" link --manifest AndroidManifest.xml -I "$PLAT" -o out/u.apk
 (cd out/dex && zip -q ../u.apk classes.dex)
