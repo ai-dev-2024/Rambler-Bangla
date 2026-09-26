@@ -18,7 +18,7 @@ try:
   b=list(map(int,re.findall(r'\d+',m.get('bounds'))));x=(b[0]+b[2])//2;y=(b[1]+b[3])//2
   if stage=='main':a('shell','input','tap',str(x),str(y));time.sleep(2)
   else:
-   for k,(xx,yy) in enumerate([(x,y),(x+300,y)]):
+   for k,(xx,yy) in enumerate([(x,y),(900,y+85),(x,y)]):
     a('logcat','-c');a('shell','input','tap',str(xx),str(yy));time.sleep(1)
     open(f'{O}/tap-{k}.log','w').write(a('logcat','-d','-v','threadtime'))
     a('shell','uiautomator','dump','/sdcard/after.xml');open(f'{O}/tap-{k}.xml','w').write(a('exec-out','cat','/sdcard/after.xml'))
