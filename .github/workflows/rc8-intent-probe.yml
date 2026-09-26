@@ -1,0 +1,95 @@
+name: rc8 settings entry probe (test branch)
+# Review artifact only. A push to this isolated branch runs one disposable emulator.
+# No product build, no mutation of the public release branch, no verdict in job colour.
+on:
+  push:
+    branches: [test/rc8-intent-probe]
+permissions:
+  contents: read
+concurrency:
+  group: rc8-intent-probe
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PKG: com.aidev2024.ramblerbangla
+      APK_PATH: ${{ github.workspace }}/under-test.apk
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Fetch only the pinned rc8 APK from four private parts
+        env:
+          TOKEN: ${{ secrets.ROUND_DRIVE_TOKEN }}
+          PARTS: ${{ secrets.ROUND_APK_PARTS }}
+          PIN: ${{ secrets.ROUND_APK_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TOKEN" && test -n "$PARTS" && test -n "$PIN" || { echo '::error::private inputs missing'; exit 1; }
+          [[ "$PIN" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          test "$PIN" = '93c593712ee539287dcd9bff7d06243092b7eb90f9d6a982ac1179afa895845a' || exit 1
+          : > "$APK_PATH"
+          n=0
+          for id in $PARTS; do
+            [[ "$id" =~ ^[A-Za-z0-9_-]{20,80}$ ]] || exit 1
+            n=$((n+1)); test "$n" -le 4 || exit 1
+            tmp=$(mktemp)
+            curl -fsS --proto =https --max-redirs 3 --retry 3 --connect-timeout 30 --max-time 300 \
+              -H @<(printf 'Authorization: Bearer %s\n' "$TOKEN") \
+              -o "$tmp" "https://www.googleapis.com/drive/v3/files/${id}?alt=media" 2>/dev/null \
+              || { rm -f "$tmp"; echo '::error::private fetch failed'; exit 1; }
+            cat "$tmp" >> "$APK_PATH"; rm -f "$tmp"
+          done
+          test "$n" -eq 4 || exit 1
+          echo "$PIN  $APK_PATH" | sha256sum --check --strict --status || exit 1
+          echo 'Pinned APK verified' # no private IDs or token in logs
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Disposable intent probe
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          emulator-build: 15917651
+          arch: x86_64
+          target: google_apis
+          profile: pixel_5
+          emulator-options: -no-snapshot-load -no-snapshot-save -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            bash .github/probes/rc8-intent-probe.sh > probe-stdout-stderr.txt 2>&1 || echo 'probe script exited nonzero' > probe-exit.txt
+      - name: Keep probe logs private on emulator failure
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p probe-evidence
+          mv -f probe-stdout-stderr.txt probe-exit.txt probe-evidence/ 2>/dev/null || true
+      - name: Encrypt private probe evidence and remove plaintext
+        if: always()
+        env:
+          AGE_RECIPIENT: ${{ secrets.ROUND_AGE_RECIPIENT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$APK_PATH"
+          test -n "$AGE_RECIPIENT"
+          sudo apt-get update -qq >/dev/null 2>&1
+          sudo apt-get install -y -qq age >/dev/null 2>&1
+          mkdir -p probe-evidence
+          mv -f probe-stdout-stderr.txt probe-exit.txt probe-evidence/ 2>/dev/null || true
+          tar czf - probe-evidence | age -r "$AGE_RECIPIENT" -o evidence.age
+          rm -rf probe-evidence
+      - name: Upload encrypted evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rc8-intent-probe-encrypted
+          path: evidence.age
+          if-no-files-found: ignore
+          retention-days: 1
