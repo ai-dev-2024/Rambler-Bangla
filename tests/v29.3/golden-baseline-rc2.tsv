@@ -42,7 +42,7 @@ k3	AUTO	cs40	codeswitch	amar mood ta ajke good na	amar mood ta ajke good na	amar
 k3	AUTO	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho
 k3	AUTO	url2	url	mail koro rahim@example.com e	mail koro rahim@example.com e	mail koro rahim@example.com e
 k3	AUTO	url3	url	link ta holo www.example.com	link ta holo www.example.com	link ta holo www.example.com
-k3	AUTO	url4	url	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com e pathao
+k3	AUTO	url4	url	amake contact@example.com e pathao	amake contact@example.com e pathao	amake contact@example.com e pathao
 k3	AUTO	url5	url	ei site e jao example.org	ei site e jao example.org	ei site e jao example.org
 k3	AUTO	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 ta dekho
 k3	AUTO	dig1	digits	ami 5 ta boi kinechi 2026 e	ami 5 ta boi kinechi 2026 e	ami 5 ta boi kinechi 2026 e
@@ -327,7 +327,7 @@ k3	BN	cs40	codeswitch	amar mood ta ajke good na	amar mood ta ajke good na	amar m
 k3	BN	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho
 k3	BN	url2	url	mail koro rahim@example.com e	mail koro rahim@example.com e	mail koro rahim@example.com e
 k3	BN	url3	url	link ta holo www.example.com	link ta holo www.example.com	link ta holo www.example.com
-k3	BN	url4	url	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com e pathao
+k3	BN	url4	url	amake contact@example.com e pathao	amake contact@example.com e pathao	amake contact@example.com e pathao
 k3	BN	url5	url	ei site e jao example.org	ei site e jao example.org	ei site e jao example.org
 k3	BN	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 ta dekho
 k3	BN	dig1	digits	ami 5 ta boi kinechi 2026 e	ami 5 ta boi kinechi 2026 e	ami 5 ta boi kinechi 2026 e
@@ -612,7 +612,7 @@ k3	EN	cs40	codeswitch	amar mood ta ajke good na	amar mood ta ajke good na	amar m
 k3	EN	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho
 k3	EN	url2	url	mail koro rahim@example.com e	mail koro rahim@example.com e	mail koro rahim@example.com e
 k3	EN	url3	url	link ta holo www.example.com	link ta holo www.example.com	link ta holo www.example.com
-k3	EN	url4	url	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com e pathao
+k3	EN	url4	url	amake contact@example.com e pathao	amake contact@example.com e pathao	amake contact@example.com e pathao
 k3	EN	url5	url	ei site e jao example.org	ei site e jao example.org	ei site e jao example.org
 k3	EN	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 ta dekho
 k3	EN	dig1	digits	ami 5 ta boi kinechi 2026 e	ami 5 ta boi kinechi 2026 e	ami 5 ta boi kinechi 2026 e
@@ -897,7 +897,7 @@ k2	AUTO	cs40	codeswitch	amar mood ta ajke good na	আমার মুড টা 
 k2	AUTO	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	আমার ওয়েবসাইট হলো https://github.com/ai-dev-2024/Rambler-Bangla dekho	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো
 k2	AUTO	url2	url	mail koro rahim@example.com e	mail koro rahim@example.com e	মাইল করো rahim@example.com এ
 k2	AUTO	url3	url	link ta holo www.example.com	লিনক টা হলো www.example.com	লিনক টা হলো www.example.com
-k2	AUTO	url4	url	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com এ পাঠাও	আমাকে karim.hasan@gmail.com এ পাঠাও
+k2	AUTO	url4	url	amake contact@example.com e pathao	amake contact@example.com এ পাঠাও	আমাকে contact@example.com এ পাঠাও
 k2	AUTO	url5	url	ei site e jao example.org	ei site e jao example.org	এই সিটে এ যাও example.org
 k2	AUTO	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 টা দেখো	https://youtu.be/abc123 টা দেখো
 k2	AUTO	dig1	digits	ami 5 ta boi kinechi 2026 e	ami 5 টা বই কিনেচি 2026 e	আমি 5 টা বই কিনেচি 2026 এ
@@ -1182,7 +1182,7 @@ k2	BN	cs40	codeswitch	amar mood ta ajke good na	আমার মুড টা �
 k2	BN	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	আমার ওয়েবসাইট হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো
 k2	BN	url2	url	mail koro rahim@example.com e	মেইল করো rahim@example.com এ	মাইল করো rahim@example.com এ
 k2	BN	url3	url	link ta holo www.example.com	লিনক টা হলো www.example.com	লিনক টা হলো www.example.com
-k2	BN	url4	url	amake karim.hasan@gmail.com e pathao	আমাকে karim.hasan@gmail.com এ পাঠাও	আমাকে karim.hasan@gmail.com এ পাঠাও
+k2	BN	url4	url	amake contact@example.com e pathao	আমাকে contact@example.com এ পাঠাও	আমাকে contact@example.com এ পাঠাও
 k2	BN	url5	url	ei site e jao example.org	এই সাইট এ যাও example.org	এই সিটে এ যাও example.org
 k2	BN	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 টা দেখো	https://youtu.be/abc123 টা দেখো
 k2	BN	dig1	digits	ami 5 ta boi kinechi 2026 e	আমি 5 টা বই কিনেচি 2026 এ	আমি 5 টা বই কিনেচি 2026 এ
@@ -1467,7 +1467,7 @@ k2	EN	cs40	codeswitch	amar mood ta ajke good na	amar mood ta ajke good na	আম
 k2	EN	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো
 k2	EN	url2	url	mail koro rahim@example.com e	mail koro rahim@example.com e	মাইল করো rahim@example.com এ
 k2	EN	url3	url	link ta holo www.example.com	link ta holo www.example.com	লিনক টা হলো www.example.com
-k2	EN	url4	url	amake karim.hasan@gmail.com e pathao	amake karim.hasan@gmail.com e pathao	আমাকে karim.hasan@gmail.com এ পাঠাও
+k2	EN	url4	url	amake contact@example.com e pathao	amake contact@example.com e pathao	আমাকে contact@example.com এ পাঠাও
 k2	EN	url5	url	ei site e jao example.org	ei site e jao example.org	এই সিটে এ যাও example.org
 k2	EN	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 টা দেখো
 k2	EN	dig1	digits	ami 5 ta boi kinechi 2026 e	ami 5 ta boi kinechi 2026 e	আমি 5 টা বই কিনেচি 2026 এ
@@ -1752,7 +1752,7 @@ k1	AUTO	cs40	codeswitch	amar mood ta ajke good na	আমার মুড তা 
 k1	AUTO	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো
 k1	AUTO	url2	url	mail koro rahim@example.com e	মাইল করো rahim@example.com এ	মাইল করো rahim@example.com এ
 k1	AUTO	url3	url	link ta holo www.example.com	লিনক তা হলো www.example.com	লিনক তা হলো www.example.com
-k1	AUTO	url4	url	amake karim.hasan@gmail.com e pathao	আমাকে karim.hasan@gmail.com এ পাঠাও	আমাকে karim.hasan@gmail.com এ পাঠাও
+k1	AUTO	url4	url	amake contact@example.com e pathao	আমাকে contact@example.com এ পাঠাও	আমাকে contact@example.com এ পাঠাও
 k1	AUTO	url5	url	ei site e jao example.org	এই সিটে এ যাও example.org	এই সিটে এ যাও example.org
 k1	AUTO	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 তা দেখো	https://youtu.be/abc123 তা দেখো
 k1	AUTO	dig1	digits	ami 5 ta boi kinechi 2026 e	আমি 5 তা বই কিনেচি 2026 এ	আমি 5 তা বই কিনেচি 2026 এ
@@ -2037,7 +2037,7 @@ k1	BN	cs40	codeswitch	amar mood ta ajke good na	আমার মুড তা �
 k1	BN	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো
 k1	BN	url2	url	mail koro rahim@example.com e	মাইল করো rahim@example.com এ	মাইল করো rahim@example.com এ
 k1	BN	url3	url	link ta holo www.example.com	লিনক তা হলো www.example.com	লিনক তা হলো www.example.com
-k1	BN	url4	url	amake karim.hasan@gmail.com e pathao	আমাকে karim.hasan@gmail.com এ পাঠাও	আমাকে karim.hasan@gmail.com এ পাঠাও
+k1	BN	url4	url	amake contact@example.com e pathao	আমাকে contact@example.com এ পাঠাও	আমাকে contact@example.com এ পাঠাও
 k1	BN	url5	url	ei site e jao example.org	এই সিটে এ যাও example.org	এই সিটে এ যাও example.org
 k1	BN	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 তা দেখো	https://youtu.be/abc123 তা দেখো
 k1	BN	dig1	digits	ami 5 ta boi kinechi 2026 e	আমি 5 তা বই কিনেচি 2026 এ	আমি 5 তা বই কিনেচি 2026 এ
@@ -2322,7 +2322,7 @@ k1	EN	cs40	codeswitch	amar mood ta ajke good na	আমার মুড তা �
 k1	EN	url1	url	amar website holo https://github.com/ai-dev-2024/Rambler-Bangla dekho	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো	আমার ওেবসিটে হলো https://github.com/ai-dev-2024/Rambler-Bangla দেখো
 k1	EN	url2	url	mail koro rahim@example.com e	মাইল করো rahim@example.com এ	মাইল করো rahim@example.com এ
 k1	EN	url3	url	link ta holo www.example.com	লিনক তা হলো www.example.com	লিনক তা হলো www.example.com
-k1	EN	url4	url	amake karim.hasan@gmail.com e pathao	আমাকে karim.hasan@gmail.com এ পাঠাও	আমাকে karim.hasan@gmail.com এ পাঠাও
+k1	EN	url4	url	amake contact@example.com e pathao	আমাকে contact@example.com এ পাঠাও	আমাকে contact@example.com এ পাঠাও
 k1	EN	url5	url	ei site e jao example.org	এই সিটে এ যাও example.org	এই সিটে এ যাও example.org
 k1	EN	url6	url	https://youtu.be/abc123 ta dekho	https://youtu.be/abc123 তা দেখো	https://youtu.be/abc123 তা দেখো
 k1	EN	dig1	digits	ami 5 ta boi kinechi 2026 e	আমি 5 তা বই কিনেচি 2026 এ	আমি 5 তা বই কিনেচি 2026 এ
