@@ -124,7 +124,10 @@ def parse_invoke(line):
 
 
 def sha256_text(s):
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+    # Baksmali may emit unpaired UTF-16 surrogates in unrelated DEX literals.
+    # Preserve those code units while scanning; ordinary UTF-8 fingerprints
+    # (including the guarded prompt/rule) hash exactly as before.
+    return hashlib.sha256(s.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 def method_bounds(lines, name, proto):
@@ -303,10 +306,18 @@ def find_enabled_languages_site(lines, mstart, mend, placeholder):
         regs, ref = inv
         if ref == STRING_REPLACE and len(regs) == 3 and regs[1] == const_reg:
             langs_reg = regs[2]
-            for j in range(i + 1, min(i + 4, mend + 1)):
-                m = re.match(r"^\s*move-result-object\s+([vp]\d+)\s*$", lines[j])
+            for j in range(i + 1, mend + 1):
+                line = lines[j].strip()
+                # Baksmali can place any number of debug directives between
+                # invoke and its immediate-result opcode. Do not cross code.
+                if not line or line.startswith("#") or line.startswith((
+                        ".line ", ".local ", ".end local ",
+                        ".restart local ", ".prologue", ".epilogue")):
+                    continue
+                m = re.fullmatch(r"move-result-object\s+([vp]\d+)", line)
                 if m:
                     return langs_reg, m.group(1), j
+                break
             raise PatchError("no move-result-object after String.replace")
     raise PatchError("no String.replace using %s after placeholder load" % const_reg)
 
@@ -321,6 +332,125 @@ def hook_snippet(temp0, src_reg, langs_reg, ext, hook):
         "    move-result-object %s" % temp0,
         "    move-object/from16 %s, %s" % (src_reg, temp0),
     ]
+
+
+def _opcode(line):
+    """Return an executable smali instruction, ignoring debug and labels."""
+    text = line.strip()
+    if not text or text.startswith(("#", ".", ":")):
+        return None
+    return text
+
+
+def _writes_register(instruction, reg):
+    """Conservative first-operand write check; unknown syntax fails closed."""
+    if instruction is None:
+        return False
+    op = instruction.split(None, 1)[0]
+    if op.startswith(("invoke-", "if-", "goto", "return", "throw", "monitor-", "aput", "iput", "sput", "filled-new-array")):
+        return False
+    # All relevant Dalvik writes have their destination first; an unknown
+    # opcode is rejected rather than assumed to preserve the value.
+    if not re.match(r"^(?:move|const|new-|iget|sget|aget|check-cast|instance-of|array-length|neg-|not-|int-|long-|float-|double-|add-|sub-|mul-|div-|rem-|and-|or-|xor-|shl-|shr-|ushr-|cmp)", op):
+        raise PatchError("unknown instruction in stock register lifetime: %s" % instruction)
+    rest = instruction[len(op):].strip()
+    return bool(re.match(r"^" + re.escape(reg) + r"(?:\s*,|\s*$)", rest))
+
+
+def verify_early_rule_site(lines, mstart, rule_idx, rule_reg, langs_reg,
+                           replace_end, placeholder):
+    """Accept the observed early-rule path only with a live joined language.
+
+    Prove both arms assign the language register, join before the rule, and
+    reject any subsequent write through the enabled-language substitution.
+    """
+    if langs_reg != "v8" or placeholder != "{ENABLED_LANGUAGES}":
+        raise PatchError("unrecognized early-rule language register/site")
+    joins = []
+    for i in range(mstart, rule_idx):
+        if re.fullmatch(r"\s*:goto_[0-9a-f]+\s*", lines[i]):
+            joins.append(i)
+    candidates = []
+    for join in joins:
+        label = lines[join].strip()
+        defs = [i for i in range(mstart, join) if _opcode(lines[i]) and
+                _writes_register(_opcode(lines[i]), langs_reg)]
+        if len(defs) < 2 or not any(re.fullmatch(r"\s*goto\s+" + re.escape(label) + r"\s*", lines[k])
+                                     for k in range(defs[-2] + 1, defs[-1])):
+            continue
+        if not re.fullmatch(r"move-object(?:/from16)?\s+" + langs_reg + r",\s*[vp]\d+", lines[defs[-2]].strip()):
+            continue
+        if not re.fullmatch(r"move-result-object\s+" + langs_reg, lines[defs[-1]].strip()):
+            continue
+        if any(_writes_register(_opcode(lines[k]), langs_reg) for k in range(join + 1, replace_end + 1)):
+            continue
+        candidates.append(join)
+    if len(candidates) != 1:
+        raise PatchError("early-rule enabled-language register lacks a verified two-arm join/lifetime")
+    # Rule literal must be the replacement argument of the precise placeholder
+    # substitution before either operand can be overwritten.
+    placeholder_reg = None
+    for i in range(rule_idx - 1, mstart - 1, -1):
+        p = parse_const_string(lines[i])
+        if p and p[1] == "{HINGLISH_OVERRIDE_RULE}":
+            placeholder_reg = p[0]
+            break
+    if placeholder_reg is None:
+        raise PatchError("early rule placeholder not found")
+    for i in range(rule_idx + 1, replace_end + 1):
+        instruction = _opcode(lines[i])
+        if not instruction:
+            continue
+        invocation = parse_invoke(lines[i])
+        if (invocation and invocation[1] == STRING_REPLACE and
+                len(invocation[0]) == 3 and
+                invocation[0][1:] == [placeholder_reg, rule_reg]):
+            return
+        if (_writes_register(instruction, rule_reg) or
+                _writes_register(instruction, placeholder_reg)):
+            break
+    raise PatchError("early rule literal not consumed by expected String.replace")
+
+
+def repair_stock_p0_window(lines, mstart, mend, saved_reg):
+    """Repair only the five stock instructions whose p0 shifts past v15.
+
+    The early-rule branch never reads saved_reg; it is a scratch register
+    during the late stock instructions. Require exact original instructions
+    and no other saved_reg use in the method before replacing anything.
+    """
+    if saved_reg != "v15":
+        raise PatchError("unexpected stock scratch register")
+    if any(re.search(r"\bv15\b", lines[i]) for i in range(mstart, mend + 1)):
+        raise PatchError("stock scratch register is live")
+    replacements = {
+        'invoke-virtual {v2, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;':
+            ['move-object/from16 v15, p0',
+             'invoke-virtual {v2, v15}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;'],
+        'invoke-virtual {p0, v0}, Lhpb;->b(Ljava/lang/Object;)Lauha;':
+            ['move-object/from16 v15, p0',
+             'invoke-virtual {v15, v0}, Lhpb;->b(Ljava/lang/Object;)Lauha;'],
+        'move-object v4, p0': ['move-object/from16 v4, p0'],
+        'iget-object p0, p0, Laazs;->c:Lauhe;':
+            ['move-object/from16 v15, p0',
+             'iget-object v15, v15, Laazs;->c:Lauhe;',
+             'move-object/from16 p0, v15'],
+        'invoke-static {v9, v0, p0}, Laugj;->t(Lauha;Laugd;Ljava/util/concurrent/Executor;)V':
+            ['move-object/from16 v15, p0',
+             'invoke-static {v9, v0, v15}, Laugj;->t(Lauha;Laugd;Ljava/util/concurrent/Executor;)V'],
+    }
+    seen = {k: 0 for k in replacements}
+    for i in range(mstart, mend + 1):
+        text = lines[i].strip()
+        if text in seen:
+            seen[text] += 1
+    if any(count != 1 for count in seen.values()):
+        raise PatchError("stock p0 window repair does not match five exact instructions")
+    for i in range(mend, mstart - 1, -1):
+        text = lines[i].strip()
+        if text in replacements:
+            indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+            lines[i:i+1] = [indent + op for op in replacements[text]]
 
 
 def patch_method(lines, profile, fingerprints_ok):
@@ -350,12 +480,10 @@ def patch_method(lines, profile, fingerprints_ok):
     if rule_idx is None:
         raise PatchError("stock Hinglish override const-string not found in "
                          "kfd.d (fingerprint %s)" % rule_fp)
-    if rule_idx < replace_end:
-        raise PatchError("stock override rule loads BEFORE the "
-                         "{ENABLED_LANGUAGES} substitution; this build's "
-                         "control flow needs a different anchor order. "
-                         "Aborting fail-closed; run analyze and adjust the "
-                         "profile.")
+    early_rule = rule_idx < replace_end
+    if early_rule:
+        verify_early_rule_site(lines, mstart, rule_idx, rule_reg,
+                               langs_reg, replace_end, placeholder)
 
     # Three temps: one dedicated save register for the enabled-languages
     # value (captured immediately after the String.replace so a later
@@ -366,14 +494,27 @@ def patch_method(lines, profile, fingerprints_ok):
     saved_langs = "v%d" % base
     temp0 = "v%d" % (base + 1)
 
-    # Insert Hook B first (later line index), then Hook A, so indices stay
-    # valid. Hook B reads the SAVED languages register, not the (possibly
-    # clobbered) original.
-    snippet_b = hook_snippet(temp0, rule_reg, saved_langs, ext, RULE_HOOK)
-    lines[rule_idx + 1:rule_idx + 1] = snippet_b
-    snippet_a = (["    move-object/from16 %s, %s" % (saved_langs, langs_reg)]
-                 + hook_snippet(temp0, result_reg, langs_reg, ext, PROMPT_HOOK))
-    lines[replace_end + 1:replace_end + 1] = snippet_a
+    if early_rule:
+        # Growing the local window shifts p0 from v15 to v18. Only the five
+        # verified narrow-form stock uses need a scratch/extended-form repair.
+        # Do this before inserting hooks, which use the same otherwise-dead v15.
+        repair_stock_p0_window(lines, mstart, mend, saved_langs)
+        # Repair is downstream of both injection anchors; their indices hold.
+        # Stock kfd.d has joined v8 before the rule; the rule is consumed
+        # before the prompt reaches the enabled-language substitution.
+        # Insert later Hook A first so the early rule index stays fixed.
+        lines[replace_end + 1:replace_end + 1] = hook_snippet(
+            temp0, result_reg, langs_reg, ext, PROMPT_HOOK)
+        lines[rule_idx + 1:rule_idx + 1] = hook_snippet(
+            temp0, rule_reg, langs_reg, ext, RULE_HOOK)
+    else:
+        # Later-rule fixture: save the languages register at Hook A, before
+        # subsequent stock instructions can overwrite it at Hook B.
+        lines[rule_idx + 1:rule_idx + 1] = hook_snippet(
+            temp0, rule_reg, saved_langs, ext, RULE_HOOK)
+        lines[replace_end + 1:replace_end + 1] = (
+            ["    move-object/from16 %s, %s" % (saved_langs, langs_reg)]
+            + hook_snippet(temp0, result_reg, langs_reg, ext, PROMPT_HOOK))
     return lines
 
 
@@ -445,7 +586,14 @@ def patch(apk, out_apk, profile, workdir, baksmali_jar, smali_jar,
 
     # 5. Reassemble only the touched dex.
     new_dex = os.path.join(workdir, "patched-" + dex_name)
-    run(smali_prefix("smali", smali_jar) + ["a", ddir, "-o", new_dex])
+    assembly_cmd = smali_prefix("smali", smali_jar) + ["a", ddir, "-o", new_dex]
+    assembly = subprocess.run(assembly_cmd, capture_output=True, text=True)
+    if (assembly.returncode != 0 or not os.path.isfile(new_dex) or
+            os.path.getsize(new_dex) == 0):
+        raise PatchError("smali failed or emitted no patched DEX "
+                         "(exit %d):\n%s%s" % (
+                             assembly.returncode, assembly.stdout,
+                             assembly.stderr))
 
     # 6. Repack: copy every entry, swap the patched dex, append extension dex.
     with zipfile.ZipFile(apk) as zin, \

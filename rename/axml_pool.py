@@ -130,7 +130,12 @@ def rewrite_arsc(data, old_package, new_package):
     out = bytearray(data)
     changed = 0
     _, hsize, _ = struct.unpack_from('<HHI', data, 0)
-    pos = hsize + StringPool(data, hsize).size
+    # The resource table's global pool may contain invalid UTF-8 fragments;
+    # only its chunk size is needed to reach package headers. Never decode it.
+    pool_type, _, pool_size = struct.unpack_from('<HHI', data, hsize)
+    if pool_type != 0x0001 or pool_size <= 0:
+        raise ValueError('invalid resource-table global string pool')
+    pos = hsize + pool_size
     while pos < len(data):
         t, hs, sz = struct.unpack_from('<HHI', data, pos)
         if t == 0x0200:

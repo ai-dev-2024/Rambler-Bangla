@@ -468,6 +468,7 @@ final class GboardRamblerLoanSpell {
     }
     String r = GboardRamblerScriptFix.convertTokenOrig(disp, lo);
     if (!v || r == null) return r;
+    r = GboardRamblerNativeSpell.fix(disp, lo, r);
     try {
       if (!GboardRamblerSentenceLang.wellFormed(r)) {
         String f = glide(r);

@@ -182,8 +182,125 @@ def build_aligned_zip(entries, out_path):
         fh.write(body)
 
 
+def rewrite_stock_manifest(data, old, new, label, version_code, version_name):
+    """Change only observed stock AXML identity slots; abort on drift."""
+    from axml_pool import StringPool
+    pool = StringPool(data, 8)
+    expected = {
+        old, old + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
+        old + '.pixelbundle.RECEIVER',
+        'com.google.android.gms.phenotype.registration.binarypb:' + old,
+        'com.google.android.gms.phenotype.registration.xml:' + old,
+        'deeplink.' + old,
+        '18.3.1.977415014-beta-arm64-v8a',
+    }
+    old_refs = {v for v in pool.strings if old in v}
+    expected_package_refs = (expected - {'18.3.1.977415014-beta-arm64-v8a'}) | {old + suffix for suffix in (
+            '.androidx-startup', '.clipboard_content', '.fileprovider',
+            '.inputactionprovider', '.mlkitinitprovider',
+            '.swissarmyknifefileprovider', '.tracing',
+            '.train.androidx-startup', '.wdb')}
+    if old_refs != expected_package_refs:
+        raise ValueError('unrecognized stock manifest package refs: %r' % sorted(old_refs ^ expected_package_refs))
+    rules = {v: v.replace(old, new) for v in old_refs}
+    rules['18.3.1.977415014-beta-arm64-v8a'] = version_name
+    # Reuse a stock string-pool slot for the new literal application label.
+    # The original string's non-label references, if any, would change too;
+    # this is checked by the exact manifest diff fixture.
+    rules['com.google.android.inputmethod.keyboarddevutils'] = label
+    data, applied = rewrite_axml(data, rules)
+    if set(applied) != set(rules):
+        raise ValueError('stock manifest string anchor missing')
+    # AXML integer versionCode and application label resource are typed
+    # attributes, not string-pool values. Locate by element and attribute
+    # name, require exact old typed values, and edit only the payload bytes.
+    data = bytearray(data)
+    pool = StringPool(data, 8)
+    pos = 8 + pool.size
+    hits = {}
+    while pos < len(data):
+        chunk_type, header_size, size = struct.unpack_from('<HHI', data, pos)
+        if chunk_type == 0x0102:
+            name_idx = struct.unpack_from('<I', data, pos + 20)[0]
+            element = pool.strings[name_idx]
+            count = struct.unpack_from('<H', data, pos + 28)[0]
+            for i in range(count):
+                attr = pos + header_size + 20*i
+                attr_name = pool.strings[struct.unpack_from('<I', data, attr + 4)[0]]
+                typed = data[attr + 15]
+                value = struct.unpack_from('<I', data, attr + 16)[0]
+                key = (element, attr_name)
+                if key == ('manifest', 'versionCode'):
+                    if typed != 0x10 or value != 176004238:
+                        raise ValueError('stock versionCode anchor mismatch')
+                    struct.pack_into('<I', data, attr + 16, version_code)
+                    hits['versionCode'] = (value, version_code)
+                if key == ('application', 'label'):
+                    if typed != 0x01 or value != 0x7f140510:
+                        raise ValueError('stock application label resource anchor mismatch')
+                    idx = pool.strings.index(label)
+                    struct.pack_into('<I', data, attr + 8, idx)
+                    data[attr + 15] = 0x03
+                    struct.pack_into('<I', data, attr + 16, idx)
+                    hits['label'] = ('@7f140510', label)
+        pos += size
+    if set(hits) != {'versionCode', 'label'}:
+        raise ValueError('missing typed stock manifest anchors')
+    return bytes(data), {'strings': applied, 'typed': hits}
+
+
+def rename_stock_staging(in_apk, out_apk, workdir, report_path, package, label,
+                         version_code, version_name, expected_sha):
+    if hashlib.sha256(open(in_apk, 'rb').read()).hexdigest() != expected_sha:
+        raise ValueError('stock staging input APK hash mismatch')
+    old = 'com.google.android.inputmethod.latin'
+    zf = zipfile.ZipFile(in_apk)
+    entries = []
+    report = {'in_sha256': expected_sha, 'identity': [package, version_code, version_name], 'steps': {}}
+    for item in zf.infolist():
+        name = item.filename
+        data = zf.read(name)
+        if name == 'AndroidManifest.xml':
+            data, result = rewrite_stock_manifest(data, old, package, label,
+                                                 version_code, version_name)
+            report['steps'][name] = result
+        elif name == 'resources.arsc':
+            data, count = rewrite_arsc(data, old, package)
+            if count != 1:
+                raise ValueError('stock ARSC package-name anchor mismatch: %d' % count)
+            report['steps'][name] = {'package_name_fields': count}
+        elif name == 'classes.dex':
+            # Identity-dependent strings observed in the exact stock DEX:
+            # a static package field and one exact package literal. The
+            # canary/dev alternatives and launcher allowlist are retained.
+            os.makedirs(workdir, exist_ok=True)
+            source = os.path.join(workdir, 'classes-in.dex')
+            dest = os.path.join(workdir, 'classes-out.dex')
+            with open(source, 'wb') as fh:
+                fh.write(data)
+            applied = rewrite_dex_strings(source, dest, {old: package},
+                                          os.path.join(workdir, 'dex'),
+                                          os.environ['SMALI_CP'])
+            if applied != {old: 2}:
+                raise ValueError('stock DEX package-literal anchors mismatch: %r' % applied)
+            if not os.path.isfile(dest) or not os.path.getsize(dest):
+                raise ValueError('smali emitted no identity DEX')
+            report['steps'][name] = applied
+            data = open(dest,'rb').read()
+        entries.append((name, data, item.compress_type))
+    build_aligned_zip(entries, out_apk)
+    report['sha256_unsigned'] = hashlib.sha256(open(out_apk,'rb').read()).hexdigest()
+    with open(report_path, 'w') as fh:
+        json.dump(report, fh, indent=2)
+    return report
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--stock-staging', action='store_true')
+    ap.add_argument('--expected-input-sha256')
+    ap.add_argument('--version-code', type=int)
+    ap.add_argument('--version-name')
     ap.add_argument('--in-apk', required=True)
     ap.add_argument('--out-apk', required=True)
     ap.add_argument('--new-package', required=True)
@@ -192,6 +309,15 @@ def main():
     ap.add_argument('--smali-cp', default=os.environ.get('SMALI_CP', ''))
     ap.add_argument('--report', required=True)
     args = ap.parse_args()
+    if args.stock_staging:
+        if not all([args.expected_input_sha256, args.version_code,
+                    args.version_name]):
+            ap.error('--stock-staging requires input SHA and version')
+        rename_stock_staging(args.in_apk, args.out_apk, args.workdir,
+                             args.report, args.new_package, args.new_label,
+                             args.version_code, args.version_name,
+                             args.expected_input_sha256)
+        return
 
     old, new = OLD_PACKAGE, args.new_package
     report = {'in': args.in_apk, 'out': args.out_apk, 'new_package': new,

@@ -1,0 +1,50 @@
+# V29 native-word spelling targets (non-loanword Bangla). Checked by V29NativeTest on the voice token path:
+# the recorded shipped converter output goes through main's LoanSpell.token + nfc exit and is compared with the canonical spelling.
+# word	shipped	canonical	status	source
+#  status main         = main fixes it; must match (hard).
+#  status open         = wrong today and fixable in main; expected to fail (xfail). A pass is reported as XPASS and fails the rig: promote it to main.
+#  status needs-source = the defect is in Tier1/ScriptFix, which main does not carry (dex only); xfail. XPASS also fails the rig.
+#  status keep         = a precision guard: main must return the shipped output unchanged (hard).
+# Canonical spellings: standard Bangla (Bangla Academy) forms, NFC as the voice exit emits them. 'shipped' = V29.3 voice output recorded in the source column.
+korche	করচে	করছে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cs7 voice
+cholche	চলচে	চলছে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cs11 voice
+geche	গেচে	গেছে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cs16 voice
+korecho	করেচো	করেছো	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cs23 voice
+acho	আচো	আছো	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cs32 voice
+korechi	করেচি	করেছি	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cs37 voice
+kinechi	কিনেচি	কিনেছি	main	tests/v29.3/golden-v29.3.tsv k2 AUTO dig1 voice
+korcho	করচো	করছো	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cv8 voice
+peyeche	পেয়েচে	পেয়েছে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cv9 voice
+parchi	পারচি	পারছি	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cv18 voice
+boleche	বলেচে	বলেছে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cv22 voice
+ashche	আশচে	আসছে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO r3ke voice
+ashchi	আশচি	আসছি	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cs18 voice
+ashle	আশলে	আসলে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cv26 voice
+ashte	আশতে	আসতে	main	tests/v29.3/golden-v29.3.tsv k2 AUTO cx3 voice
+parche	পারচে	পারছে	main	docs/spelling-corpus-v1.tsv (v28d current; V29 Tier1 status not visible from main)
+kichu	কিচু	কিছু	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cv18 voice
+moddhe	মদ্ধে	মধ্যে	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cs33 voice
+bari	বারি	বাড়ি	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cv7 voice
+shuprobhat	শুপ্রভাত	সুপ্রভাত	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cv20 voice
+shondhay	শন্ধায়	সন্ধ্যায়	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cv25 voice
+kno	কনো	কেন	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cv26 voice
+chinta	চিনতা	চিন্তা	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cv29 voice
+dhukbo	ধুকবো	ঢুকবো	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO amb3 voice
+chobi	চবি	ছবি	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO hs1 voice
+shoptahe	শপ্তাহে	সপ্তাহে	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO ho6 voice
+ora	অরা	ওরা	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cx7 voice
+boyosh	বয়শ	বয়স	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO dig8 voice
+gechilam	গেচিলাম	গিয়েছিলাম	needs-source	tests/v29.3/golden-v29.3.tsv k2 AUTO cs20 voice
+hothat	হথাত	হঠাৎ	needs-source	docs/spelling-corpus-v1.tsv (v28d current; V29-FIXTURES E says V29 Tier1 fixed 35/36 WRONG rows)
+jacchi	যাচ্ছি	যাচ্ছি	keep	tests/v29.3/golden-v29.3.tsv k2 AUTO cs25 voice
+hocche	হচ্ছে	হচ্ছে	keep	tests/v29.3/golden-v29.3.tsv k2 AUTO cv14 voice
+pacchi	পাচ্ছি	পাচ্ছি	keep	tests/v29.3/golden-v29.3.tsv k2 AUTO ho5 voice
+jaccho	যাচ্ছো	যাচ্ছো	keep	tests/v29.3/golden-v29.3.tsv k2 AUTO cv5 voice
+dekhchi	দেখছি	দেখছি	keep	docs/spelling-corpus-v1.tsv (v28d current, OK)
+bolchi	বলছি	বলছি	keep	docs/spelling-corpus-v1.tsv (v28d current, OK)
+ache	আছে	আছে	keep	tests/v29.3/golden-v29.3.tsv k2 AUTO cs8 voice
+chhele	ছেলে	ছেলে	keep	tests/v29.3/golden-v29.3.tsv k2 AUTO cv15 voice
+nachi	নাচি	নাচি	keep	guard: plain letter-converter shape (not a recorded output)
+beche	বেচে	বেচে	keep	guard: plain letter-converter shape (not a recorded output)
+kache	কাছে	কাছে	keep	guard: plain letter-converter shape (not a recorded output)
+niche	নিচে	নিচে	keep	guard: plain letter-converter shape (not a recorded output)
