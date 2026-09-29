@@ -9,6 +9,11 @@ Unicode for `bn-BD`, `bn-IN` and `bn-Beng`; Romanization happens only for an
 explicit Latin variant (`bn-Latn`); English always stays Latin. No
 transliteration is added and no cleanup stage is disabled.
 
+**What this repository is:** a patch that you apply to a Gboard 18.3.1 APK
+you obtain yourself. It contains source code, a fingerprint profile, rename
+tooling, tests and audit documents. It does not redistribute any Google APK,
+DEX, signing key or model file, and there is no prebuilt download here.
+
 ## Features
 
 ### Headline features (V29.3)
@@ -97,7 +102,51 @@ Both switches are in the keyboard's settings, in the Rambler section.
 - **v28d: last stable baseline.** Evidence and status detail:
   `docs/EVIDENCE.md`, `docs/V28-SEGMENT-LOCK.md`, `ledger/v28-provenance.md`.
 
-## Build and test
+## How it works
+
+The patcher does not edit bytes by offset. It disassembles the APK, proves it
+is looking at the exact build the profile describes, and only then inserts two
+calls into one method. If a check fails, the patcher exits with status 2 and
+writes no output file.
+
+```mermaid
+flowchart TD
+    APK[Gboard 18.3.1 APK<br/>supplied by the user] --> DIS[baksmali: disassemble every DEX]
+    DIS --> FP{Every SHA-256 string<br/>fingerprint in the profile found?}
+    FP -- no --> STOP[Abort: exit 2, no output APK]
+    FP -- yes --> ANCH{Cleanup-builder and prompt-owner<br/>method anchors match?}
+    ANCH -- no --> STOP
+    ANCH -- yes --> DF{Enabled-languages register<br/>found by local dataflow?}
+    DF -- no --> STOP
+    DF -- yes --> HOOK[Insert hook A: script gate<br/>and hook B: override rule]
+    HOOK --> ASM[smali: reassemble only the touched DEX]
+    ASM --> PACK[Repack APK and append the<br/>runtime extension DEX]
+    PACK --> OUT[Unsigned output APK:<br/>re-sign with your own key]
+```
+
+1. **Fingerprint sweep.** `fingerprints/gboard-18.3.1.json` lists SHA-256
+   hashes of strings the target build must contain. The profile stores
+   hashes, not the strings, so no Google text is reproduced here. One miss
+   means an unrecognized build, and the patcher refuses it.
+2. **Anchors.** The cleanup-builder method and the method that owns the
+   cleanup prompt must exist with the exact class, name and signature in the
+   profile.
+3. **Dataflow.** Inside the cleanup builder, the patcher traces the
+   placeholder string to its `String.replace` call to find the register that
+   holds the enabled-languages value, instead of trusting a hard-coded
+   register number.
+4. **Hooks.** Two calls into `GboardRamblerLiteScriptRuntime` are inserted.
+   At runtime, hook B replaces the injected "Hinglish Override" rule and hook
+   A rewrites only the Romanization bullet of the prompt's SCRIPT GATE, based
+   on the enabled languages. The original rule string stays in place as the
+   fail-safe input.
+5. **Repack.** Only the touched DEX is reassembled, and the runtime is added
+   as an extra DEX. The patcher never signs.
+
+Running the patcher on a build it has already patched is refused too, which
+the test suite checks.
+
+## Build and reproduce
 
 ```bash
 bash scripts/bootstrap_tools.sh          # fetch pinned toolchain into ./tools
@@ -119,6 +168,31 @@ The patcher never signs; re-sign with your own key afterwards (upstream
 builds additionally rename the package and bypass signature checks). Building
 `runtime.dex`: `javac` the extension class, then `d8 --min-api 24`
 (`fixtures/build_fixture.sh` shows both steps).
+
+## Verification
+
+[`tests/run_tests.sh`](tests/run_tests.sh) runs in CI on every push to `main`
+and on every pull request ([Static test suite](.github/workflows/tests.yml)).
+It needs no phone and no Google binaries: it builds a synthetic fixture APK
+that mirrors the real anchors, then patches it. The suite has five stages:
+
+| Stage | What it asserts |
+| --- | --- |
+| 1. Policy unit tests | 51 JVM assertions on the runtime: locale classification, which override rule applies, and the SCRIPT GATE rewrite |
+| 2. Fixture build | The fixture APK builds end to end with smali, d8, aapt2 and signing |
+| 3. End-to-end patch | Anchors and fingerprints resolve; both hooks are inserted; the enabled-languages value lands in its own register; hook arguments don't clobber each other; the stock rule string is preserved; `--extension-dex` adds the runtime DEX |
+| 4. Fail-closed negatives | A wrong fingerprint, a one-character change to the stock rule, and re-patching an already patched build each exit with status 2 and produce no APK |
+| 5. APK validation | The patched, re-signed fixture passes APK Signature Scheme v2 verification, and androguard parses both the stock and patched APKs |
+
+A passing run ends with `TEST SUITE: 17 passed, 0 failed`. The CI job fails
+unless that line reports zero failures.
+
+For a real patched APK, `scripts/verify_apk.sh` checks the output offline
+and can compare it with the stock APK. The dated validation record and the
+evidence behind each anchor are in [`docs/VALIDATION.md`](docs/VALIDATION.md)
+and [`docs/EVIDENCE.md`](docs/EVIDENCE.md). The full 2026-09-20 suite log is
+attached to the [v29.3 release](https://github.com/ai-dev-2024/Rambler-Bangla/releases/tag/v29.3)
+and is no longer kept in the tree.
 
 ## Toolchain
 
